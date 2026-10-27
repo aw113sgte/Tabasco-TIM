@@ -62,7 +62,7 @@ label{display:block;margin:6px 0}.row{display:flex;flex-wrap:wrap;gap:8px;align-
 <section id="set">
 <div class="card"><h3>Dashboard sensors</h3><p class="mute">Tick what shows on the Dashboard; arrows change the order. J1587 values appear here once they've been heard on the bus.</p>
 <ul class="sel" id="sellist"></ul><p><button class="pri" onclick="saveDash()">Save dashboard</button></p></div>
-<div class="card"><h3>Firmware update</h3><p>Running <b id="fw"></b>. Choose the <code>.bin</code> file from Arduino (Sketch, Export Compiled Binary) and press Upload. The board restarts; if the new firmware fails in its first 30 s, it goes back to this one.</p>
+<div class="card"><h3>Firmware update</h3><p>Running <b id="fw"></b>. Choose the <code>.bin</code> file from Arduino (Sketch, Export Compiled Binary) and press Upload. The board restarts; if the new firmware fails in its first 30 s, it goes back to this one. If the file picker does nothing in the pop-up sign-in window, open <b>http://192.168.4.1</b> in Chrome instead.</p>
 <div class="row"><input type="file" id="bin" accept=".bin"><button class="pri" onclick="upload()">Upload</button><span id="upst"></span></div></div>
 <div class="card"><h3>Wi-Fi</h3><p class="mute" id="wst"></p>
 <label>Hotspot name <input id="ap_ssid"></label><label>Hotspot password (8+ characters, blank = keep) <input id="ap_pass" type="password"></label>

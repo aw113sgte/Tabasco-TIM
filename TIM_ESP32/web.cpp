@@ -1,5 +1,6 @@
 #include "web.h"
 
+#include <DNSServer.h>
 #include <ESPmDNS.h>
 #include <Update.h>
 #include <WebServer.h>
@@ -15,6 +16,7 @@
 #include "webpage.h"
 
 static WebServer g_server(80);
+static DNSServer g_dns;  // captive portal: every name on the hotspot resolves to the TIM
 static String g_updateError;
 static const char* const kEngineText[] = {"off", "cranking", "running", "unknown"};
 
@@ -29,6 +31,10 @@ void wifiBegin() {
     WiFi.setAutoReconnect(true);
     WiFi.begin(g_wifi.staSsid.c_str(), g_wifi.staPass.c_str());
   }
+  // Captive portal: answer every DNS lookup from hotspot clients with the TIM's address, so phones and
+  // laptops see a "sign in to network" page and open the TIM page by themselves.
+  g_dns.setErrorReplyCode(DNSReplyCode::NoError);
+  g_dns.start(53, "*", WiFi.softAPIP());
   MDNS.begin(kHostname);
   MDNS.addService("http", "tcp", 80);
   Serial.printf("[TIM] WiFi: hotspot \"%s\" at %s, channel %u%s\n", g_wifi.apSsid.c_str(),
@@ -527,10 +533,21 @@ void webBegin() {
     ESP.restart();
   });
   g_server.on("/update", HTTP_POST, updateDone, updateChunk);
-  g_server.onNotFound([] { g_server.send(404, "text/plain", "not found"); });
+  // Captive-portal checks (Android /generate_204, Apple /hotspot-detect.html, Windows /connecttest.txt, ...)
+  // and any other address typed on the hotspot: send the browser to the TIM page.
+  g_server.onNotFound([] {
+    const String host = g_server.hostHeader();
+    if (host == WiFi.softAPIP().toString() || host == WiFi.localIP().toString() || host == String(kHostname) + ".local") {
+      g_server.send(404, "text/plain", "not found");
+      return;
+    }
+    g_server.sendHeader("Location", String("http://") + WiFi.softAPIP().toString() + "/", true);
+    g_server.send(302, "text/plain", "");
+  });
   g_server.begin();
 }
 
 void webLoop() {
+  g_dns.processNextRequest();
   g_server.handleClient();
 }

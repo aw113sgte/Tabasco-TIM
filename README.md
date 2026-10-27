@@ -9,8 +9,8 @@ Plan and decisions: `Firmware_Plan.md`. Bench checks: `Bench_Test.md`.
 | Path | What |
 |---|---|
 | `TIM_ESP32/` | Arduino sketch. Open `TIM_ESP32.ino` in the Arduino IDE; the other files open as tabs |
-| `bin/TIM_ESP32_v0.1.0.bin` | Compiled app, for the browser Update page (OTA) |
-| `bin/TIM_ESP32_v0.1.0_merged.bin` | Full 4 MB image (bootloader + partitions + app) for a first flash at address 0x0 without the Arduino IDE |
+| `bin/TIM_ESP32_v<version>.bin` | Compiled app, for the browser Update page (OTA). Use the newest version |
+| `bin/TIM_ESP32_v<version>_merged.bin` | Full 4 MB image (bootloader + partitions + app) for a first flash at address 0x0 without the Arduino IDE |
 
 | Sketch file | Does |
 |---|---|
@@ -32,13 +32,16 @@ Plan and decisions: `Firmware_Plan.md`. Bench checks: `Bench_Test.md`.
 A DevKitC on its own (not plugged into the TIM board) runs fine: it reports the ADCs as missing and blinks the status LED fast.
 
 ## Using it
-- Join the Wi-Fi network **TIM-Tabasco**, password **tabasco-tim**, then open **http://192.168.4.1** (or http://tim.local on a laptop).
+- Join the Wi-Fi network **TIM-Tabasco** (password **tabasco-tim**). The phone or laptop pops up the TIM page on its own, the same way public Wi-Fi shows a sign-in page. You can also open **http://192.168.4.1** (or http://tim.local on a laptop) at any time. For firmware uploads, use Chrome at http://192.168.4.1 if the pop-up window's file picker doesn't work.
 - Change the hotspot password on the Settings page. Settings, Calibrate and Update ask for a login: user `admin`, password = the hotspot password.
 - Tabs: Dashboard (sensors you pick), All signals (every ADC channel raw and converted, min/max), J1587 (everything heard on the bus, download a capture), Calibrate, Modules (ESP-NOW nodes heard), Settings (dashboard choice, firmware update, Wi-Fi, restart, factory reset).
 - USB serial commands: `STATUS`, `RAW`, `I2C`, `J1587 ON|OFF` (print every frame), `ZERO all|shunt|c59|oil_in|oil_out|air`, `WIFI`, `NOW`, `REBOOT`.
 - LEDs: D5 status blinks once a second with all four ADCs answering, fast when one is missing. D6 lights while J1587 frames are arriving.
 
 ## Updating over Wi-Fi
+From the phone: ask Claude for the change. Claude pushes the new `.bin` to `bin/` on GitHub. Download it in the phone's browser **before** joining TIM-Tabasco, because the hotspot has no internet, then upload it on the Settings tab.
+
+From a PC with the Arduino IDE:
 1. In the Arduino IDE: Sketch > **Export Compiled Binary**. The `.bin` lands in the sketch's `build/` folder (use the plain `TIM_ESP32.ino.bin`, not `merged` or `bootloader`).
 2. On the phone or PC, open the Settings tab, choose the file and press **Upload**. The board restarts in about 20 s.
 3. A new firmware has to run 30 s before it's kept. If it crashes or resets sooner, the board goes back to the previous firmware by itself. USB flashing always works as a last resort.
