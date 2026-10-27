@@ -154,31 +154,42 @@ static void apiLive() {
     o += s[i].st;
     o += ']';
   }
-  // Every J1587 parameter with a known scaling, as id "j<MID>.<PID>".
+  // Every J1587 parameter heard, as id "j<MID>.<PID>". Known PIDs are scaled; unknown 1-4 byte PIDs are
+  // sent as their raw number (unit "raw") so they can still go on the dashboard.
   static J1587Pid pids[96];
   const int n = j1587CopyPids(pids, 96);
   const uint32_t now = millis();
   o += "],\"j\":[";
   bool first = true;
   for (int i = 0; i < n; i++) {
+    const J1587Pid& p = pids[i];
     float v;
-    if (!j1587Decode(pids[i], v)) continue;
+    const bool known = j1587Decode(p, v);
+    if (!known) {
+      if (p.len == 0 || p.len > 4 || p.pid == 194 || p.pid == 254) continue;
+      uint32_t raw = 0;
+      for (int k = p.len - 1; k >= 0; k--) raw = (raw << 8) | p.data[k];
+      v = (float)raw;
+    }
     if (!first) o += ',';
     first = false;
     char id[16];
-    snprintf(id, sizeof(id), "j%u.%u", pids[i].mid, pids[i].pid);
+    snprintf(id, sizeof(id), "j%u.%u", p.mid, p.pid);
     o += "{\"id\":";
     jStr(o, id);
     o += ",\"name\":";
-    const char* mn = j1587MidName(pids[i].mid);
-    String name = String(j1587PidName(pids[i].pid)) + " (" + (mn ? String(mn) : "MID " + String(pids[i].mid)) + ")";
+    const char* mn = j1587MidName(p.mid);
+    const char* pn = j1587PidName(p.pid);
+    String name = (pn ? String(pn) : "PID " + String(p.pid)) + " (" + (mn ? String(mn) : "MID " + String(p.mid)) + ")";
     jStr(o, name.c_str());
     o += ",\"unit\":";
-    jStr(o, j1587PidUnit(pids[i].pid));
+    jStr(o, known ? j1587PidUnit(p.pid) : "raw");
     o += ",\"v\":";
-    jNum(o, v, j1587PidDecimals(pids[i].pid));
+    jNum(o, v, known ? j1587PidDecimals(p.pid) : 0);
+    o += ",\"dec\":";
+    o += known ? j1587PidDecimals(p.pid) : 0;
     o += ",\"age\":";
-    o += now - pids[i].lastMs;
+    o += now - p.lastMs;
     o += '}';
   }
   o += "]}";
@@ -295,6 +306,36 @@ static void apiJ1587() {
     o += now - p.lastMs;
     o += ",\"n\":";
     o += p.count;
+    o += '}';
+  }
+  static J1587Dtc dtcs[32];
+  const int nd = j1587CopyDtcs(dtcs, 32);
+  o += "],\"dtc\":[";
+  for (int i = 0; i < nd; i++) {
+    const J1587Dtc& d = dtcs[i];
+    if (i) o += ',';
+    o += "{\"mid\":";
+    o += d.mid;
+    o += ",\"midn\":";
+    jStr(o, j1587MidName(d.mid) ? j1587MidName(d.mid) : "");
+    o += ",\"num\":";
+    o += d.num;
+    o += ",\"sid\":";
+    o += d.isSid ? "true" : "false";
+    o += ",\"name\":";
+    jStr(o, (!d.isSid && j1587PidName(d.num)) ? j1587PidName(d.num) : "");
+    o += ",\"fmi\":";
+    o += d.fmi;
+    o += ",\"fmin\":";
+    jStr(o, j1587FmiText(d.fmi));
+    o += ",\"active\":";
+    o += d.active ? "true" : "false";
+    o += ",\"count\":";
+    o += d.count;
+    o += ",\"age\":";
+    o += now - d.lastMs;
+    o += ",\"first\":";
+    o += now - d.firstMs;
     o += '}';
   }
   o += "]}";

@@ -43,6 +43,8 @@ label{display:block;margin:6px 0}.row{display:flex;flex-wrap:wrap;gap:8px;align-
 <section id="j">
 <div class="card"><h3>J1708 bus (listen only, this board never transmits)</h3><p id="jst"></p>
 <div class="row"><a href="/j1587.txt"><button>Download capture</button></a><button onclick="post('/api/j1587/clear')">Clear</button></div></div>
+<div class="card"><h3>Trouble codes (broadcast by each module on PID 194)</h3><div class="scroll"><table id="dtab"></table></div>
+<p class="mute">Codes the modules announce on their own. PID = a measured parameter, SID = a component the module defines (look the number up in that module's manual). A code stays listed until Clear or a restart; "last sent" shows whether the module is still announcing it. Reading stored history or clearing codes needs the TIM to transmit, which this firmware doesn't do.</p></div>
 <div class="card"><h3>Parameters heard</h3><div class="scroll"><table id="jtab"></table></div>
 <p class="mute">Scalings are from SAE J1587; check them against a known gauge before trusting them.</p></div>
 </section>
@@ -60,7 +62,7 @@ label{display:block;margin:6px 0}.row{display:flex;flex-wrap:wrap;gap:8px;align-
 <p class="mute">The TIM broadcasts "tim_v" and "tim_p" packets every second and answers STATUS, GET, PING and HELP.</p></div></section>
 
 <section id="set">
-<div class="card"><h3>Dashboard sensors</h3><p class="mute">Tick what shows on the Dashboard; arrows change the order. J1587 values appear here once they've been heard on the bus.</p>
+<div class="card"><h3>Dashboard sensors</h3><p class="mute">Tick what shows on the Dashboard; arrows change the order. Every J1587 value appears here once it's been heard on the bus; ones without a known scaling show as a raw number.</p>
 <ul class="sel" id="sellist"></ul><p><button class="pri" onclick="saveDash()">Save dashboard</button></p></div>
 <div class="card"><h3>Firmware update</h3><p>Running <b id="fw"></b>. Choose the <code>.bin</code> file from Arduino (Sketch, Export Compiled Binary) and press Upload. The board restarts; if the new firmware fails in its first 30 s, it goes back to this one. If the file picker does nothing in the pop-up sign-in window, open <b>http://192.168.4.1</b> in Chrome instead.</p>
 <div class="row"><input type="file" id="bin" accept=".bin"><button class="pri" onclick="upload()">Upload</button><span id="upst"></span></div></div>
@@ -85,7 +87,7 @@ function fmt(v,d){return v==null?'--':Number(v).toFixed(d)}
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function extra(id,v){if(v==null)return '';if(id=='fuel_vac')return ' ('+(v*2.036).toFixed(2)+' inHg)';if(id=='air')return ' ('+(v*27.68).toFixed(1)+' inH2O)';return ''}
 function sigList(){const a=meta.sig.map((s,i)=>({id:s.id,name:s.name,unit:s.unit,dec:s.dec,i}));
- for(const j of (live&&live.j)||[])a.push({id:j.id,name:j.name,unit:j.unit,dec:1,j:true});return a}
+ for(const j of (live&&live.j)||[])a.push({id:j.id,name:j.name,unit:j.unit,dec:j.dec,j:true});return a}
 function valOf(s){if(!live)return{v:null,st:1};if(s.j){const j=live.j.find(x=>x.id==s.id);return j?{v:j.v,st:j.age>5000?1:0,age:j.age}:{v:null,st:1}}
  const x=live.sig[s.i];return{v:x[0],st:x[1]}}
 function c58(v){return v==null?'--':(v>0.5?'OPEN':'closed')}
@@ -109,6 +111,10 @@ async function tick(){try{
   $('jst').innerHTML=`${s.frames} good frames, ${s.bad} bad checksum, ${s.malformed} malformed, ${s.long} over 21 bytes, ${s.uart} UART errors, ${s.bytes} bytes. Last frame: ${s.last==null?'never':(s.last/1000).toFixed(1)+' s ago'}`;
   let h='<tr><th>MID</th><th>PID</th><th>Name</th><th>Value</th><th>Raw</th><th>Age</th><th>Count</th></tr>';
   j.pids.sort((a,b)=>a.mid-b.mid||a.pid-b.pid);
+  let d='<tr><th>Module</th><th>Code</th><th>Fault</th><th>Status</th><th>Count</th><th>Last sent</th></tr>';
+  j.dtc.sort((a,b)=>b.active-a.active||a.mid-b.mid);
+  for(const c of j.dtc)d+=`<tr><td>${c.mid} ${esc(c.midn)}</td><td>${c.sid?'SID':'PID'} ${c.num}${c.name?' '+esc(c.name):''}</td><td>FMI ${c.fmi}: ${esc(c.fmin)}</td><td class="${c.active?'bad':'mute'}">${c.active?'ACTIVE':'inactive'}</td><td>${c.count||''}</td><td>${(c.age/1000).toFixed(0)} s ago</td></tr>`;
+  $('dtab').innerHTML=j.dtc.length?d:'<tr><td>No trouble codes heard.</td></tr>';
   for(const p of j.pids)h+=`<tr><td>${p.mid} ${esc(p.midn)}</td><td>${p.pid}</td><td>${esc(p.name)}</td><td>${p.v==null?'':fmt(p.v,2)+' '+esc(p.unit)}</td><td><code>${p.hex}</code></td><td>${(p.age/1000).toFixed(1)} s</td><td>${p.n}</td></tr>`;$('jtab').innerHTML=h}
  if(cur=='cal')await renderCal();
  if(cur=='mod'){const n=await get('/api/nodes');$('nowst').textContent=`This TIM: ${n.me}, ${n.ready?'ready':'NOT ready'}, sent ${n.tx} (${n.fail} failed), received ${n.rx}.`;

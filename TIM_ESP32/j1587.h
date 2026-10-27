@@ -22,6 +22,18 @@ struct J1587Stats {
   uint32_t lastFrameMs;
 };
 
+// A trouble code from PID 194 (diagnostic code transmission), which each module broadcasts on its own.
+struct J1587Dtc {
+  uint8_t mid;
+  uint16_t num;      // PID or SID number (256+ = page 2 / expansion code)
+  bool isSid;        // true = SID (module-specific component), false = PID (a parameter)
+  uint8_t fmi;       // failure mode identifier 0-15
+  bool active;
+  uint8_t count;     // occurrence count, 0 if the module didn't send one
+  uint32_t firstMs;
+  uint32_t lastMs;
+};
+
 void j1587Begin();
 void j1587GetStats(J1587Stats& out);
 int j1587CopyPids(J1587Pid* out, int max);
@@ -31,6 +43,8 @@ const char* j1587PidName(uint16_t pid);             // nullptr = unknown
 const char* j1587PidUnit(uint16_t pid);
 uint8_t j1587PidDecimals(uint16_t pid);
 const char* j1587MidName(uint8_t mid);
+int j1587CopyDtcs(J1587Dtc* out, int max);
+const char* j1587FmiText(uint8_t fmi);
 void j1587CaptureText(String& out);                 // last frames as text, oldest first
 void j1587Clear();
 void j1587SetEcho(bool on);                         // print every frame on USB serial

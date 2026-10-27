@@ -22,7 +22,10 @@ struct CapturedFrame {
   uint8_t b[kCaptureBytes];
 };
 
+static const int kDtcSlots = 32;
 static J1587Pid g_pids[kPidSlots];
+static J1587Dtc g_dtcs[kDtcSlots];
+static int g_numDtcs = 0;
 static int g_numPids = 0;
 static J1587Stats g_stats;
 static CapturedFrame g_capture[kCaptureSlots];
@@ -122,7 +125,51 @@ bool j1587Decode(const J1587Pid& p, float& value) {
   return true;
 }
 
+const char* j1587FmiText(uint8_t fmi) {
+  static const char* const kFmi[16] = {
+      "above normal range", "below normal range", "erratic or intermittent data", "voltage high / shorted high",
+      "voltage low / shorted low", "current low / open circuit", "current high / grounded",
+      "mechanical system not responding", "abnormal frequency or pulse width", "abnormal update rate",
+      "abnormal rate of change", "failure mode not identifiable", "bad device or component",
+      "out of calibration", "special instructions", "reserved"};
+  return kFmi[fmi & 0x0F];
+}
+
 // ------------------------------------------------------------------ frame handling
+
+// PID 194 data: pairs of (PID/SID number, code character), each optionally followed by an occurrence count.
+// Code character: bit 7 = count byte follows, bit 6 = inactive, bit 5 = standard code (0 = expansion, page 2),
+// bit 4 = SID (0 = PID), bits 0-3 = FMI. Called with g_mux held.
+static void storeDtcs(uint8_t mid, const uint8_t* d, uint8_t len, uint32_t now) {
+  int i = 0;
+  while (i + 1 < len) {
+    const uint8_t id = d[i];
+    const uint8_t cc = d[i + 1];
+    i += 2;
+    uint8_t count = 0;
+    if (cc & 0x80) {
+      if (i >= len) break;
+      count = d[i++];
+    }
+    J1587Dtc c = {mid, (uint16_t)(id + ((cc & 0x20) ? 0 : 256)), (cc & 0x10) != 0, (uint8_t)(cc & 0x0F),
+                  (cc & 0x40) == 0, count, now, now};
+    J1587Dtc* slot = nullptr;
+    for (int k = 0; k < g_numDtcs; k++) {
+      J1587Dtc& x = g_dtcs[k];
+      if (x.mid == c.mid && x.num == c.num && x.isSid == c.isSid && x.fmi == c.fmi) {
+        slot = &x;
+        break;
+      }
+    }
+    if (slot) {
+      c.firstMs = slot->firstMs;
+      *slot = c;
+    } else if (g_numDtcs < kDtcSlots) {
+      g_dtcs[g_numDtcs++] = c;
+    }
+  }
+}
+
 static void storePid(uint8_t mid, uint16_t pid, const uint8_t* data, uint8_t len, uint32_t now) {
   J1587Pid* slot = nullptr;
   for (int i = 0; i < g_numPids; i++) {
@@ -144,6 +191,9 @@ static void storePid(uint8_t mid, uint16_t pid, const uint8_t* data, uint8_t len
   memcpy(slot->data, data, slot->len);
   slot->lastMs = now;
   slot->count++;
+  if (pid == 194) {
+    storeDtcs(mid, data, len, now);
+  }
 }
 
 static void handleFrame(const uint8_t* f, int len) {
@@ -344,6 +394,14 @@ bool j1587Value(uint8_t mid, uint16_t pid, float& value, uint32_t maxAgeMs) {
   return j1587Decode(p, value);
 }
 
+int j1587CopyDtcs(J1587Dtc* out, int max) {
+  portENTER_CRITICAL(&g_mux);
+  const int n = min(max, g_numDtcs);
+  memcpy(out, g_dtcs, n * sizeof(J1587Dtc));
+  portEXIT_CRITICAL(&g_mux);
+  return n;
+}
+
 void j1587CaptureText(String& out) {
   static CapturedFrame copy[kCaptureSlots];
   int count, head;
@@ -369,6 +427,7 @@ void j1587CaptureText(String& out) {
 void j1587Clear() {
   portENTER_CRITICAL(&g_mux);
   g_numPids = 0;
+  g_numDtcs = 0;
   g_capCount = 0;
   g_capHead = 0;
   memset(&g_stats, 0, sizeof(g_stats));

@@ -34,7 +34,7 @@ A DevKitC on its own (not plugged into the TIM board) runs fine: it reports the 
 ## Using it
 - Join the Wi-Fi network **TIM-Tabasco** (password **tabasco-tim**). The phone or laptop pops up the TIM page on its own, the same way public Wi-Fi shows a sign-in page. You can also open **http://192.168.4.1** (or http://tim.local on a laptop) at any time. For firmware uploads, use Chrome at http://192.168.4.1 if the pop-up window's file picker doesn't work.
 - Change the hotspot password on the Settings page. Settings, Calibrate and Update ask for a login: user `admin`, password = the hotspot password.
-- Tabs: Dashboard (sensors you pick), All signals (every ADC channel raw and converted, min/max), J1587 (everything heard on the bus, download a capture), Calibrate, Modules (ESP-NOW nodes heard), Settings (dashboard choice, firmware update, Wi-Fi, restart, factory reset).
+- Tabs: Dashboard (sensors you pick), All signals (every ADC channel raw and converted, min/max), J1587 (trouble codes the modules broadcast, every parameter heard on the bus, download a capture), Calibrate, Modules (ESP-NOW nodes heard), Settings (dashboard choice, firmware update, Wi-Fi, restart, factory reset).
 - USB serial commands: `STATUS`, `RAW`, `I2C`, `J1587 ON|OFF` (print every frame), `ZERO all|shunt|c59|oil_in|oil_out|air`, `WIFI`, `NOW`, `REBOOT`.
 - LEDs: D5 status blinks once a second with all four ADCs answering, fast when one is missing. D6 lights while J1587 frames are arriving.
 
@@ -56,5 +56,6 @@ Plain-text commands sent to the TIM's MAC: `STATUS` / `GET` (both packets back t
 
 ## Known limits (phase 1)
 - The oil-filter (C61/C62) and air-cleaner (C63) sensor ranges are unknown. Their curves are placeholders (0-100 psi and 0-1 psi over the usual 0.5-4.5 V). Set the real curve on the Calibrate page once it's known. C59 uses the catalog 0-30 psia with the usual 0.5-4.5 V output, which isn't confirmed yet. The engine-off reading checks it: it should be about 14.7 psia, ratio about 0.49.
-- J1587 scalings come from the SAE J1587 table. Check them against a known gauge.
+- J1587 scalings come from the SAE J1587 table. Check them against a known gauge. Parameters without a known scaling can still go on the dashboard as a raw number.
+- Trouble codes: only the ones the modules broadcast (PID 194). Reading stored codes and clearing codes both need transmitting, which is a later step.
 - No MIC / TIM emulation yet: that needs a bus capture first. The J1587 tab's download gives exactly that capture.
