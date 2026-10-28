@@ -13,7 +13,10 @@ const char* const kAdcChPin[kNumAdcCh] = {
 
 static const uint8_t kRegConv = 0x00;
 static const uint8_t kRegConfig = 0x01;
-static const float kFilterAlpha = 0.25f;  // EMA per scan (~50 scans/s)
+static const float kFilterAlpha = 0.25f;  // EMA per scan (~60 scans/s)
+// The alternator field wire (pin 14) is switched by the regulator (PWM), so single samples jump between
+// about 14 and 29 V. A ~1.5 s average shows the mean field voltage instead.
+static const float kFilterAlphaField = 0.01f;
 
 static AdcSnapshot g_snap;
 static portMUX_TYPE g_mux = portMUX_INITIALIZER_UNLOCKED;
@@ -70,7 +73,8 @@ static void adcTask(void*) {
         }
         const uint8_t ch = a * 4 + ain;
         const float volts = raw * kAdcLsbV;
-        v[ch] = have[ch] ? v[ch] + kFilterAlpha * (volts - v[ch]) : volts;
+        const float alpha = ch == CH_V2010 ? kFilterAlphaField : kFilterAlpha;
+        v[ch] = have[ch] ? v[ch] + alpha * (volts - v[ch]) : volts;
         have[ch] = true;
       }
     }

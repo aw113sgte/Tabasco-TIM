@@ -37,7 +37,7 @@ label{display:block;margin:6px 0}.row{display:flex;flex-wrap:wrap;gap:8px;align-
 <div class="card"><h3>Engineering values</h3><div class="scroll"><table id="engtab"></table></div></div>
 <div class="card"><h3>ADC channels <button onclick="post('/api/minmax/reset')">Reset min/max</button></h3>
 <p class="mute" id="adcsum"></p><div class="scroll"><table id="rawtab"></table></div>
-<p class="mute">"Input" is the value at the C55 pin before calibration: FE-A volts, FE-B sensor volts, or starter amps. "Ratio" is sensor volts / sensor supply.</p></div>
+<p class="mute">"Input" is the value at the C55 pin before calibration: FE-A volts, FE-B sensor volts, or battery amps (+ = discharge). "Ratio" is sensor volts / sensor supply.</p></div>
 </section>
 
 <section id="j">
@@ -55,7 +55,7 @@ label{display:block;margin:6px 0}.row{display:flex;flex-wrap:wrap;gap:8px;align-
 <div class="scroll"><table id="zerotab"></table></div></div>
 <div class="card"><h3>Voltage trim against a meter</h3><p class="mute">Measure the wire with a meter (5 V or more), type the reading, press Set.</p><div class="scroll"><table id="vtab"></table></div></div>
 <div class="card"><h3>Sensor curves</h3><p class="mute">Pressure = low + (ratio - ratio low) / (ratio high - ratio low) x (high - low). The usual 0.5-4.5 V sensor is ratio 0.10-0.90. Only C59 (0-30 psia) is from catalog data; the others are placeholders until the sensor ranges are known.</p><div class="scroll"><table id="ctab"></table></div></div>
-<div class="card"><h3>Starter current direction</h3><p>If cranking current reads negative, the shunt sense wires are reversed. <button onclick="sign()">Flip sign</button> <span id="signst"></span></p></div>
+<div class="card"><h3>Battery current direction</h3><p>The shunt carries all battery current: cranking should read positive (discharge) and charging negative. If cranking reads negative, the sense wires are reversed. <button onclick="sign()">Flip sign</button> <span id="signst"></span></p></div>
 </section>
 
 <section id="mod"><div class="card"><h3>ESP-NOW (channel 1)</h3><p id="nowst"></p><div class="scroll"><table id="nowtab"></table></div>
