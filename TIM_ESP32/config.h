@@ -1,5 +1,6 @@
 // TIM ESP32 replacement firmware: pins and fixed constants.
-// Board: rev A TIM replacement PCB with an ESP32-DevKitC-32E (or -32UE). Pin map: Design_Notes.md, "ESP32 GPIO".
+// Board: rev A TIM replacement PCB with an ESP32-DevKitC-32E (or -32UE), or rev B with the ESP32-WROOM-32E module
+// soldered on. Both use the same GPIOs, so one build runs on either. Pin map: Design_Notes.md, "ESP32 GPIO".
 #pragma once
 
 #include <Arduino.h>
