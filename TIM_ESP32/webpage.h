@@ -68,7 +68,7 @@ label{display:block;margin:6px 0}.row{display:flex;flex-wrap:wrap;gap:8px;align-
 <div class="row"><input type="file" id="bin" accept=".bin"><button class="pri" onclick="upload()">Upload</button><span id="upst"></span></div></div>
 <div class="card"><h3>Wi-Fi</h3><p class="mute" id="wst"></p>
 <label>Hotspot name <input id="ap_ssid"></label><label>Hotspot password (8+ characters, blank = keep) <input id="ap_pass" type="password"></label>
-<label><input type="checkbox" id="sta_en"> Also join shop Wi-Fi (2.4 GHz only). While joined, the hotspot and ESP-NOW move to the router's channel, so the BMS link only works if that is channel 1. If it can't join within 20 s it gives up, puts the hotspot back on channel 1 and tries again every 10 min while nobody is on the hotspot.</label>
+<label><input type="checkbox" id="sta_en"> Also join shop Wi-Fi (2.4 GHz only). While joined, the hotspot and ESP-NOW move to the router's channel, so the BMS link only works if that is channel 1. If it can't join within 20 s it gives up and puts the hotspot back on channel 1. It tries again every 30 s, or every 5 min while someone is on the hotspot.</label>
 <label>Shop Wi-Fi name, exactly as it appears (capitals matter; Scan and "Use" fills it in) <input id="sta_ssid"></label>
 <label><input type="checkbox" id="sta_ch1"> Channel 1 only: join only an access point on channel 1, so the hotspot and the BMS link stay on channel 1</label><label>Shop Wi-Fi password (blank = keep) <input id="sta_pass" type="password"></label>
 <div class="row"><button class="pri" onclick="saveWifi()">Save and restart</button><button onclick="post('/api/wifi/retry')">Try shop Wi-Fi now</button><button onclick="scan()">Scan for networks</button></div>

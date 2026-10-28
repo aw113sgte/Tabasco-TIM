@@ -26,10 +26,16 @@ static const char* const kEngineText[] = {"off", "cranking", "running", "unknown
 // The ESP32 has one radio. While it hunts for a shop network it can't join, it hops across every channel
 // and drags the hotspot (and ESP-NOW, which needs channel 1) with it. So a join attempt gets kStaTryMs;
 // after that the TIM drops shop Wi-Fi, puts the hotspot back on channel 1 and only tries again every
-// kStaRetryMs while nobody is on the hotspot.
+// kStaRetryIdleMs while nobody is on the hotspot, or every kStaRetryBusyMs while someone is (a failed attempt
+// can move the hotspot off channel 1 for up to 20 s). A phone that auto-joins the hotspot then can't keep the
+// TIM off shop Wi-Fi for good, and a short drop (mesh roaming, router restart) heals within a minute.
 enum StaState : uint8_t { STA_OFF, STA_TRYING, STA_CONNECTED, STA_GAVE_UP };
 static const uint32_t kStaTryMs = 20000;
-static const uint32_t kStaRetryMs = 10UL * 60 * 1000;
+static const uint32_t kStaRetryIdleMs = 30000;
+static const uint32_t kStaRetryBusyMs = 5UL * 60 * 1000;
+static uint32_t g_staDrops = 0;     // times a joined shop Wi-Fi was lost since boot
+static uint32_t g_staDropMs = 0;
+static uint8_t g_staDropReason = 0;
 static StaState g_sta = STA_OFF;
 static uint32_t g_staSince = 0;
 static volatile uint8_t g_staReason = 0;  // last disconnect reason from the Wi-Fi driver
@@ -93,6 +99,7 @@ static void staStop(StaState next) {
 void wifiBegin() {
   WiFi.persistent(false);
   WiFi.setHostname(kHostname);
+  WiFi.setSleep(false);  // no modem sleep: it delays or drops replies to the web page
   WiFi.onEvent(
       [](WiFiEvent_t, WiFiEventInfo_t info) {
         if (!g_staStopping && g_sta != STA_OFF && g_sta != STA_GAVE_UP) {
@@ -121,24 +128,30 @@ void wifiLoop() {
     case STA_TRYING:
       if (WiFi.status() == WL_CONNECTED) {
         g_sta = STA_CONNECTED;
+        MDNS.end();  // re-announce tim.local on the shop network
+        MDNS.begin(kHostname);
+        MDNS.addService("http", "tcp", 80);
         Serial.printf("[TIM] WiFi: joined \"%s\" as %s (channel %u; hotspot and ESP-NOW moved with it)\n",
                       g_wifi.staSsid.c_str(), WiFi.localIP().toString().c_str(), (unsigned)WiFi.channel());
       } else if (now - g_staSince > kStaTryMs) {
         const String why = staReason();
         staStop(STA_GAVE_UP);
-        Serial.printf("[TIM] WiFi: couldn't join \"%s\": %s. Hotspot back on channel %u, next try in %lu min\n",
+        Serial.printf("[TIM] WiFi: couldn't join \"%s\": %s. Hotspot back on channel %u, next try in %lu s\n",
                       g_wifi.staSsid.c_str(), why.c_str(), (unsigned)kWifiChannel,
-                      (unsigned long)(kStaRetryMs / 60000));
+                      (unsigned long)((WiFi.softAPgetStationNum() ? kStaRetryBusyMs : kStaRetryIdleMs) / 1000));
       }
       break;
     case STA_CONNECTED:
       if (WiFi.status() != WL_CONNECTED) {
         Serial.printf("[TIM] WiFi: lost \"%s\" (%s)\n", g_wifi.staSsid.c_str(), staReason().c_str());
+        g_staDrops++;
+        g_staDropMs = now;
+        g_staDropReason = g_staReason;
         staStart();
       }
       break;
     case STA_GAVE_UP:
-      if (now - g_staSince > kStaRetryMs && WiFi.softAPgetStationNum() == 0) {
+      if (now - g_staSince > (WiFi.softAPgetStationNum() ? kStaRetryBusyMs : kStaRetryIdleMs)) {
         staStart();
       }
       break;
@@ -194,12 +207,19 @@ String wifiStatusText() {
       s += ", shop Wi-Fi " + name + " " + WiFi.localIP().toString() + " RSSI " + WiFi.RSSI();
       break;
     case STA_GAVE_UP:
-      s += ", shop Wi-Fi " + name + " failed: " + staReason() + "; next try in " +
-           String((kStaRetryMs / 1000 > secs ? kStaRetryMs / 1000 - secs : 0) / 60) +
-           " min (only while nobody is on the hotspot)";
+      {
+        const uint32_t wait = (WiFi.softAPgetStationNum() ? kStaRetryBusyMs : kStaRetryIdleMs) / 1000;
+        s += ", shop Wi-Fi " + name + " failed: " + staReason() + "; next try in " + String(wait > secs ? wait - secs : 0) +
+             " s (every 30 s, or 5 min while someone is on the hotspot)";
+      }
       break;
     default:
       break;
+  }
+  if (g_staDrops) {
+    const char* t = staReasonText(g_staDropReason);
+    s += ". Shop Wi-Fi lost " + String(g_staDrops) + "x since restart, last " + String((millis() - g_staDropMs) / 1000) +
+         " s ago (" + (t ? String(t) : "reason " + String(g_staDropReason)) + ")";
   }
   return s;
 }
