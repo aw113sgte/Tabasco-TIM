@@ -13,6 +13,7 @@
 #include "json_util.h"
 #include "settings.h"
 #include "signals.h"
+#include "uptime.h"
 #include "webpage.h"
 
 static WebServer g_server(80);
@@ -292,10 +293,14 @@ static void apiLive() {
   SigValue s[kNumSig];
   EngineInfo e;
   currentValues(a, s, e);
+  static SigMinMax mm[kNumSig];
+  sigMinMaxGet(mm);
+  static J1587Pid pids[kJ1587PidSlots];
+  const int n = j1587CopyPids(pids, kJ1587PidSlots);
   String o;
-  o.reserve(2500);
+  o.reserve(1500 + n * 190);
   o = "{\"up\":";
-  o += millis() / 1000;
+  o += uptimeSeconds();
   o += ",\"eng\":";
   engineJson(o, e);
   o += ",\"sig\":[";
@@ -305,25 +310,26 @@ static void apiLive() {
     jNum(o, s[i].v, kSig[i].decimals + 1);
     o += ',';
     o += s[i].st;
+    o += ',';
+    jNum(o, mm[i].vmin, kSig[i].decimals + 1);
+    o += ',';
+    jNum(o, mm[i].vmax, kSig[i].decimals + 1);
+    o += ',';
+    o += mm[i].tmin;
+    o += ',';
+    o += mm[i].tmax;
     o += ']';
   }
   // Every J1587 parameter heard, as id "j<MID>.<PID>". Known PIDs are scaled; unknown 1-4 byte PIDs are
   // sent as their raw number (unit "raw") so they can still go on the dashboard.
-  static J1587Pid pids[96];
-  const int n = j1587CopyPids(pids, 96);
   const uint32_t now = millis();
   o += "],\"j\":[";
   bool first = true;
   for (int i = 0; i < n; i++) {
     const J1587Pid& p = pids[i];
     float v;
-    const bool known = j1587Decode(p, v);
-    if (!known) {
-      if (p.len == 0 || p.len > 4 || p.pid == 194 || p.pid == 254) continue;
-      uint32_t raw = 0;
-      for (int k = p.len - 1; k >= 0; k--) raw = (raw << 8) | p.data[k];
-      v = (float)raw;
-    }
+    bool known;
+    if (!j1587Number(p, v, known)) continue;
     if (!first) o += ',';
     first = false;
     char id[16];
@@ -343,6 +349,15 @@ static void apiLive() {
     o += known ? j1587PidDecimals(p.pid) : 0;
     o += ",\"age\":";
     o += now - p.lastMs;
+    const uint8_t dec = known ? j1587PidDecimals(p.pid) : 0;
+    o += ",\"mn\":";
+    jNum(o, p.vmin, dec);
+    o += ",\"mx\":";
+    jNum(o, p.vmax, dec);
+    o += ",\"tmn\":";
+    o += p.tmin;
+    o += ",\"tmx\":";
+    o += p.tmax;
     o += '}';
   }
   o += "]}";
@@ -369,7 +384,7 @@ static void apiRaw() {
   o += ",\"heap\":";
   o += ESP.getFreeHeap();
   o += ",\"up\":";
-  o += millis() / 1000;
+  o += uptimeSeconds();
   o += ",\"wifi\":";
   jStr(o, wifiStatusText().c_str());
   o += ",\"ch\":[";
@@ -409,8 +424,8 @@ static void apiRaw() {
 static void apiJ1587() {
   J1587Stats st;
   j1587GetStats(st);
-  static J1587Pid pids[96];
-  const int n = j1587CopyPids(pids, 96);
+  static J1587Pid pids[kJ1587PidSlots];
+  const int n = j1587CopyPids(pids, kJ1587PidSlots);
   const uint32_t now = millis();
   String o;
   o.reserve(200 + n * 120);
@@ -426,6 +441,16 @@ static void apiJ1587() {
   o += st.tooLong;
   o += ",\"uart\":";
   o += st.uartErrors;
+  o += ",\"ign\":";
+  o += st.ignoredMid;
+  o += ",\"pdrop\":";
+  o += st.pidDropped;
+  o += ",\"ddrop\":";
+  o += st.dtcDropped;
+  o += ",\"slots\":";
+  o += n;
+  o += ",\"slotmax\":";
+  o += kJ1587PidSlots;
   o += ",\"last\":";
   if (st.lastFrameMs) {
     o += now - st.lastFrameMs;
@@ -461,8 +486,8 @@ static void apiJ1587() {
     o += p.count;
     o += '}';
   }
-  static J1587Dtc dtcs[32];
-  const int nd = j1587CopyDtcs(dtcs, 32);
+  static J1587Dtc dtcs[kJ1587DtcSlots];
+  const int nd = j1587CopyDtcs(dtcs, kJ1587DtcSlots);
   o += "],\"dtc\":[";
   for (int i = 0; i < nd; i++) {
     const J1587Dtc& d = dtcs[i];
@@ -661,6 +686,8 @@ void webBegin() {
   });
   g_server.on("/api/minmax/reset", HTTP_POST, [] {
     adcResetMinMax();
+    sigMinMaxReset();
+    j1587ResetMinMax();
     sendResult("");
   });
   g_server.on("/api/dash", HTTP_POST, [] {

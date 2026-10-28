@@ -17,7 +17,7 @@ main{padding:12px;max-width:1100px;margin:auto}section{display:none}section.on{d
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
 .tile{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
 .tile .n{font-size:12px;color:var(--mute)}.tile .v{font-size:28px;font-weight:600;font-variant-numeric:tabular-nums}
-.tile .u{font-size:14px;color:var(--mute);margin-left:4px}.tile .s{font-size:12px}
+.tile .u{font-size:14px;color:var(--mute);margin-left:4px}.tile .s{font-size:12px}.tile .mm{font-size:12px;color:var(--mute);font-variant-numeric:tabular-nums}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px}
 h3{margin:0 0 8px;font-size:15px}table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
 td,th{padding:4px 6px;border-bottom:1px solid var(--line);text-align:left;font-size:13px}th{color:var(--mute);font-weight:500}
@@ -31,7 +31,7 @@ label{display:block;margin:6px 0}.row{display:flex;flex-wrap:wrap;gap:8px;align-
 <header><b>TIM</b><span id="eng">engine ?</span><span class="mute" id="hdr"></span>
 <nav id="nav"><button data-s="dash" class="on">Dashboard</button><button data-s="sig">All signals</button><button data-s="j">J1587</button><button data-s="cal">Calibrate</button><button data-s="mod">Modules</button><button data-s="set">Settings</button></nav></header>
 <main>
-<section id="dash" class="on"><div class="grid" id="tiles"></div><p class="mute" id="dashnote"></p></section>
+<section id="dash" class="on"><div class="row" style="margin-bottom:10px"><button onclick="post('/api/minmax/reset')">Clear min/max</button><span class="mute">Min/max since restart or the last clear; @ = uptime second it happened (now <span id="upnow">?</span> s). Not saved.</span></div><div class="grid" id="tiles"></div><p class="mute" id="dashnote"></p></section>
 
 <section id="sig">
 <div class="card"><h3>Engineering values</h3><div class="scroll"><table id="engtab"></table></div></div>
@@ -50,7 +50,7 @@ label{display:block;margin:6px 0}.row{display:flex;flex-wrap:wrap;gap:8px;align-
 </section>
 
 <section id="cal">
-<div class="card"><h3>Engine-off zero</h3><p id="calst"></p>
+<div class="card"><h3>Zero (do it with the engine off for a true zero)</h3><p id="calst"></p>
 <div class="row"><button class="pri" onclick="zero('all')">Zero all</button><button onclick="zero('shunt')">Shunt</button><button onclick="zero('c59')">C59 baro</button><button onclick="zero('oil_in')">Oil inlet</button><button onclick="zero('oil_out')">Oil outlet</button><button onclick="zero('air')">Air cleaner</button><button onclick="post('/api/cal/undo')">Undo last change</button></div>
 <div class="scroll"><table id="zerotab"></table></div></div>
 <div class="card"><h3>Voltage trim against a meter</h3><p class="mute">Measure the wire with a meter (5 V or more), type the reading, press Set.</p><div class="scroll"><table id="vtab"></table></div></div>
@@ -90,27 +90,29 @@ function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','
 function extra(id,v){if(v==null)return '';if(id=='fuel_vac')return ' ('+(v*2.036).toFixed(2)+' inHg)';if(id=='air')return ' ('+(v*27.68).toFixed(1)+' inH2O)';return ''}
 function sigList(){const a=meta.sig.map((s,i)=>({id:s.id,name:s.name,unit:s.unit,dec:s.dec,i}));
  for(const j of (live&&live.j)||[])a.push({id:j.id,name:j.name,unit:j.unit,dec:j.dec,j:true});return a}
-function valOf(s){if(!live)return{v:null,st:1};if(s.j){const j=live.j.find(x=>x.id==s.id);return j?{v:j.v,st:j.age>5000?1:0,age:j.age}:{v:null,st:1}}
- const x=live.sig[s.i];return{v:x[0],st:x[1]}}
+function valOf(s){if(!live)return{v:null,st:1};if(s.j){const j=live.j.find(x=>x.id==s.id);return j?{v:j.v,st:j.age>5000?1:0,age:j.age,mn:j.mn,mx:j.mx,tmn:j.tmn,tmx:j.tmx}:{v:null,st:1}}
+ const x=live.sig[s.i];return{v:x[0],st:x[1],mn:x[2],mx:x[3],tmn:x[4],tmx:x[5]}}
+function mmLine(s,x){if(x.mn==null)return '<div class="mm">min/max: no reading yet</div>';const f=v=>s.id=='c58'?c58(v):fmt(v,s.dec);
+ return `<div class="mm">min ${f(x.mn)} @ ${x.tmn} s<br>max ${f(x.mx)} @ ${x.tmx} s</div>`}
 function c58(v){return v==null?'--':(v>0.5?'OPEN':'closed')}
 function renderDash(){const ids=meta.dash.split(',').filter(x=>x);const all=sigList();let h='';
  for(const id of ids){let s=all.find(x=>x.id==id);if(!s){if(id[0]=='j')h+=`<div class="tile"><div class="n">${esc(id)}</div><div class="v mute">--</div><div class="s mute">not heard on J1587</div></div>`;continue}
   const x=valOf(s);const cls=x.st?'warn':'ok';let vs=s.id=='c58'?c58(x.v):fmt(x.v,s.dec);
   let note=s.j?(x.st?'stale':'J1587'):ST[x.st];if(s.id=='c58'&&x.v>0.5)note='restricted or broken wire';
-  h+=`<div class="tile"><div class="n">${esc(s.name)}</div><div class="v">${vs}<span class="u">${esc(s.unit)}</span></div><div class="s ${cls}">${esc(note)}${extra(s.id,x.v)}</div></div>`}
+  h+=`<div class="tile"><div class="n">${esc(s.name)}</div><div class="v">${vs}<span class="u">${esc(s.unit)}</span></div><div class="s ${cls}">${esc(note)}${extra(s.id,x.v)}</div>${mmLine(s,x)}</div>`}
  $('tiles').innerHTML=h||'<p>No sensors chosen. Pick some under Settings.</p>'}
 function renderEng(){let h='<tr><th>Signal</th><th>Value</th><th>Status</th></tr>';
  meta.sig.forEach((s,i)=>{const x=live.sig[i];h+=`<tr><td>${esc(s.name)}</td><td>${s.id=='c58'?c58(x[0]):fmt(x[0],s.dec+1)+' '+esc(s.unit)}${extra(s.id,x[0])}</td><td class="${x[1]?'warn':'ok'}">${ST[x[1]]}</td></tr>`});$('engtab').innerHTML=h}
 async function tick(){try{
  live=await get('/api/live');const e=live.eng;$('eng').textContent='engine '+e.state+(e.rpm!=null?' '+e.rpm+' rpm':'');
- $('eng').className=e.state=='off'?'ok':'warn';$('hdr').textContent='up '+live.up+' s';
+ $('eng').className=e.state=='off'?'ok':'warn';$('hdr').textContent='up '+live.up+' s';$('upnow').textContent=live.up;
  if(cur=='dash')renderDash();
  if(cur=='sig'){renderEng();const r=await get('/api/raw');
   $('adcsum').textContent='ADCs: '+['U7 0x48','U8 0x49','U9 0x4A','U10 0x4B'].map((n,i)=>n+(r.ok[i]?' ok':' MISSING')+(r.err[i]?' ('+r.err[i]+' errors)':'')).join(', ')+'. '+r.hz+' scans/s, free heap '+r.heap+'. Wi-Fi: '+r.wifi;
   let h='<tr><th>Channel</th><th>C55 pin / wire</th><th>ADC V</th><th>min</th><th>max</th><th>Input</th><th>Ratio</th></tr>';
   for(const c of r.ch)h+=`<tr><td>${c.n}</td><td>${c.pin}</td><td>${fmt(c.v,4)}</td><td>${fmt(c.min,4)}</td><td>${fmt(c.max,4)}</td><td>${fmt(c.in,c.n=='SHUNT_I'?0:3)}${c.n=='SHUNT_I'?' A':' V'}</td><td>${c.r==null?'':fmt(c.r,4)}</td></tr>`;$('rawtab').innerHTML=h}
  if(cur=='j'){const j=await get('/api/j1587');const s=j.st;
-  $('jst').innerHTML=`${s.frames} good frames, ${s.bad} bad checksum, ${s.malformed} malformed, ${s.long} over 21 bytes, ${s.uart} UART errors, ${s.bytes} bytes. Last frame: ${s.last==null?'never':(s.last/1000).toFixed(1)+' s ago'}`;
+  $('jst').innerHTML=`${s.frames} good frames, ${s.bad} bad checksum, ${s.malformed} malformed, ${s.long} over 21 bytes, ${s.uart} UART errors, ${s.ign} ignored (not a J1587 MID), ${s.bytes} bytes. Parameter table ${s.slots}/${s.slotmax}${s.pdrop?', '+s.pdrop+' dropped (table full)':''}${s.ddrop?', '+s.ddrop+' trouble codes dropped':''}. Last frame: ${s.last==null?'never':(s.last/1000).toFixed(1)+' s ago'}`;
   let h='<tr><th>MID</th><th>PID</th><th>Name</th><th>Value</th><th>Raw</th><th>Age</th><th>Count</th></tr>';
   j.pids.sort((a,b)=>a.mid-b.mid||a.pid-b.pid);
   let d='<tr><th>Module</th><th>Code</th><th>Fault</th><th>Status</th><th>Count</th><th>Last sent</th></tr>';
@@ -127,7 +129,7 @@ const CN=['C59 fuel inlet (psia)','C61 oil outlet (psi)','C62 oil inlet (psi)','
 const VI=['v1437','v1139','v1138','v1431','v1274','v2010','v1435a','v1435b','v2085'];
 function when(t){return t?new Date(t*1000).toLocaleString():'never'}
 async function renderCal(){const c=await get('/api/cal');const e=c.eng;
- $('calst').innerHTML=e.state=='off'?'<span class="ok">Engine confirmed off ('+esc(e.reason)+'). Zeroing allowed.</span>':'<span class="bad">Zeroing blocked: engine '+e.state+' ('+esc(e.reason)+').</span>';
+ $('calst').innerHTML=e.state=='off'?'<span class="ok">Engine off ('+esc(e.reason)+').</span>':'<span class="warn">Engine '+e.state+' ('+esc(e.reason)+'). Zeroing still works, but with the engine running it stores a non-zero reading as zero.</span>';
  const z=[['Starter shunt','zero at '+fmt(c.shunt_zero,4)+' V',c.epoch[9]],['C59 barometric reference',fmt(c.baro,3)+' psia (now '+fmt(c.unc[0],3)+', ratio '+fmt(c.ratio[0],4)+')',c.epoch[10]],
   ['Oil inlet C62','offset '+fmt(c.zero[2],3)+' psi (ratio now '+fmt(c.ratio[2],4)+')',c.epoch[13]],['Oil outlet C61','offset '+fmt(c.zero[1],3)+' psi (ratio now '+fmt(c.ratio[1],4)+')',c.epoch[12]],
   ['Air cleaner C63','offset '+fmt(c.zero[3],3)+' psi (ratio now '+fmt(c.ratio[3],4)+')',c.epoch[14]]];
@@ -138,7 +140,7 @@ async function renderCal(){const c=await get('/api/cal');const e=c.eng;
  h='<tr><th>Sensor</th><th>Ratio low</th><th>Ratio high</th><th>Low</th><th>High</th><th></th></tr>';
  c.curve.forEach((k,i)=>{h+=`<tr><td>${CN[i]}</td>`+k.map((v,j)=>`<td><input id="c${i}_${j}" size="5" value="${v}" inputmode="decimal"></td>`).join('')+`<td><button onclick="curve(${i})">Save</button></td></tr>`});$('ctab').innerHTML=h}
  $('signst').textContent='now '+(c.shunt_sign>0?'normal':'reversed');window._sign=c.shunt_sign}
-function zero(w){if(confirm('Engine off and key off? Zero '+w+'?'))post('/api/cal/zero',{what:w})}
+function zero(w){if(confirm('Zero '+w+' now? Engine should be off.'))post('/api/cal/zero',{what:w})}
 function meter(id){const v=$('m_'+id).value;if(v)post('/api/cal/meter',{id,v})}
 function curve(i){post('/api/cal/curve',{c:i,rlo:$('c'+i+'_0').value,rhi:$('c'+i+'_1').value,plo:$('c'+i+'_2').value,phi:$('c'+i+'_3').value})}
 function sign(){post('/api/cal/shuntsign',{s:-(window._sign||1)})}

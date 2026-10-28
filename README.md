@@ -17,7 +17,7 @@ Plan and decisions: `Firmware_Plan.md`. Bench checks: `Bench_Test.md`.
 | `config.h` | Pins, front-end scaling constants, Wi-Fi defaults |
 | `app.cpp` | `setup()`/`loop()`, USB serial console, status LED, OTA rollback confirmation |
 | `adc.cpp` | Four ADS1115s (0x48-0x4B), single-shot scan about 50 times a second, filtering, min/max |
-| `signals.cpp` | Volts / amps / psi from the ADC channels, engine-running check, engine-off calibration |
+| `signals.cpp` | Volts / amps / psi from the ADC channels, engine state (J1587 engine speed only), zero calibration, dashboard min/max |
 | `j1587.cpp` | UART2 receive at 9600, J1708 framing and checksum, J1587 PID decoding, capture buffer |
 | `web.cpp`, `webpage.h` | Hotspot, web UI, JSON API, firmware upload |
 | `espnow_link.cpp` | ESP-NOW on channel 1 (same conventions as the BMS v2) |
@@ -34,6 +34,8 @@ A DevKitC on its own (not plugged into the TIM board) runs fine: it reports the 
 ## Using it
 - Join the Wi-Fi network **TIM-Tabasco** (password **tabasco-tim**). The phone or laptop pops up the TIM page on its own, the same way public Wi-Fi shows a sign-in page. You can also open **http://192.168.4.1** (or http://tim.local on a laptop) at any time. For firmware uploads, use Chrome at http://192.168.4.1 if the pop-up window's file picker doesn't work.
 - Change the hotspot password on the Settings page. Settings, Calibrate and Update ask for a login: user `admin`, password = the hotspot password.
+- Dashboard tiles show min and max since restart, each with the uptime second it happened. **Clear min/max** resets all of them (also the ADC min/max). Nothing is saved.
+- Engine state comes only from engine speed on J1587: over 300 rpm = running, below = off, nothing heard = unknown. Updates and zeroing work at any time; zero with the engine off for a true zero.
 - Tabs: Dashboard (sensors you pick), All signals (every ADC channel raw and converted, min/max), J1587 (trouble codes the modules broadcast, every parameter heard on the bus, download a capture), Calibrate, Modules (ESP-NOW nodes heard), Settings (dashboard choice, firmware update, Wi-Fi, restart, factory reset).
 - USB serial commands: `STATUS`, `RAW`, `I2C`, `J1587 ON|OFF` (print every frame), `ZERO all|shunt|c59|oil_in|oil_out|air`, `WIFI` (status), `WIFI STA OFF` / `WIFI STA ON` / `WIFI RETRY` (shop Wi-Fi), `SCAN` (networks the TIM can hear), `NOW`, `REBOOT`.
 - Shop Wi-Fi: 2.4 GHz only. If the TIM can't join within 20 s, it gives up, puts the hotspot back on channel 1, shows the reason in Settings (network not found, password rejected, ...) and retries every 10 min, but only while nobody is on the hotspot. "Channel 1 only" (on by default) joins only an access point on channel 1, so the hotspot and the BMS link stay on channel 1. Settings has a network scan and a "Try shop Wi-Fi now" button.

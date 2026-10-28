@@ -3,6 +3,7 @@
 #include <driver/uart.h>
 
 #include "config.h"
+#include "uptime.h"
 
 // J1708 framing: bytes of one message are at most 2 bit times apart; messages are separated by at least
 // 10-12 bit times of idle. The UART RX timeout of 1 character time (10 bits) ends a frame.
@@ -11,7 +12,7 @@
 // 254 the rest of the message, 255 = the next byte is a page 2 PID.
 
 static const uart_port_t kUart = UART_NUM_2;
-static const int kPidSlots = 96;
+static const int kPidSlots = kJ1587PidSlots;
 static const int kCaptureSlots = 256;
 static const uint8_t kCaptureBytes = 24;
 
@@ -22,7 +23,7 @@ struct CapturedFrame {
   uint8_t b[kCaptureBytes];
 };
 
-static const int kDtcSlots = 32;
+static const int kDtcSlots = kJ1587DtcSlots;
 static J1587Pid g_pids[kPidSlots];
 static J1587Dtc g_dtcs[kDtcSlots];
 static int g_numDtcs = 0;
@@ -125,6 +126,20 @@ bool j1587Decode(const J1587Pid& p, float& value) {
   return true;
 }
 
+bool j1587Number(const J1587Pid& p, float& value, bool& known) {
+  known = j1587Decode(p, value);
+  if (known) {
+    return true;
+  }
+  if (p.len == 0 || p.len > 4 || p.pid == 194 || p.pid == 254) {
+    return false;
+  }
+  uint32_t raw = 0;
+  for (int k = p.len - 1; k >= 0; k--) raw = (raw << 8) | p.data[k];
+  value = (float)raw;
+  return true;
+}
+
 const char* j1587FmiText(uint8_t fmi) {
   static const char* const kFmi[16] = {
       "above normal range", "below normal range", "erratic or intermittent data", "voltage high / shorted high",
@@ -161,12 +176,24 @@ static void storeDtcs(uint8_t mid, const uint8_t* d, uint8_t len, uint32_t now) 
         break;
       }
     }
-    if (slot) {
-      c.firstMs = slot->firstMs;
-      *slot = c;
-    } else if (g_numDtcs < kDtcSlots) {
-      g_dtcs[g_numDtcs++] = c;
+    if (!slot && g_numDtcs < kDtcSlots) {
+      slot = &g_dtcs[g_numDtcs++];
+      slot->firstMs = now;
     }
+    if (!slot) {  // full: reuse the code not announced for the longest, if it has gone quiet
+      J1587Dtc* old = &g_dtcs[0];
+      for (int k = 1; k < g_numDtcs; k++) {
+        if (now - g_dtcs[k].lastMs > now - old->lastMs) old = &g_dtcs[k];
+      }
+      if (now - old->lastMs < kJ1587StaleMs) {
+        g_stats.dtcDropped++;
+        continue;
+      }
+      slot = old;
+      slot->firstMs = now;
+    }
+    c.firstMs = slot->firstMs;
+    *slot = c;
   }
 }
 
@@ -178,19 +205,44 @@ static void storePid(uint8_t mid, uint16_t pid, const uint8_t* data, uint8_t len
       break;
     }
   }
-  if (!slot) {
-    if (g_numPids >= kPidSlots) {
+  bool fresh = false;
+  if (!slot && g_numPids < kPidSlots) {
+    slot = &g_pids[g_numPids++];
+    fresh = true;
+  } else if (!slot) {  // full: reuse the entry not heard for the longest, if it has gone quiet
+    slot = &g_pids[0];
+    for (int i = 1; i < g_numPids; i++) {
+      if (now - g_pids[i].lastMs > now - slot->lastMs) slot = &g_pids[i];
+    }
+    if (now - slot->lastMs < kJ1587StaleMs) {
+      g_stats.pidDropped++;
       return;
     }
-    slot = &g_pids[g_numPids++];
+    fresh = true;
+  }
+  if (fresh) {
     slot->mid = mid;
     slot->pid = pid;
     slot->count = 0;
+    slot->vmin = slot->vmax = NAN;
   }
   slot->len = min<uint8_t>(len, sizeof(slot->data));
   memcpy(slot->data, data, slot->len);
   slot->lastMs = now;
   slot->count++;
+  float v;
+  bool known;
+  if (j1587Number(*slot, v, known)) {
+    const uint32_t t = uptimeSeconds();
+    if (isnan(slot->vmin) || v < slot->vmin) {
+      slot->vmin = v;
+      slot->tmin = t;
+    }
+    if (isnan(slot->vmax) || v > slot->vmax) {
+      slot->vmax = v;
+      slot->tmax = t;
+    }
+  }
   if (pid == 194) {
     storeDtcs(mid, data, len, now);
   }
@@ -226,6 +278,11 @@ static void handleFrame(const uint8_t* f, int len) {
     g_stats.tooLong++;
   }
   const uint8_t mid = f[0];
+  if (mid < 128 || mid == 255) {  // J1587 MIDs are 128-254; anything else is a corrupted frame that passed the checksum
+    g_stats.ignoredMid++;
+    portEXIT_CRITICAL(&g_mux);
+    return;
+  }
   const int end = len - 1;  // checksum byte
   int i = 1;
   bool malformed = false;
@@ -431,6 +488,14 @@ void j1587Clear() {
   g_capCount = 0;
   g_capHead = 0;
   memset(&g_stats, 0, sizeof(g_stats));
+  portEXIT_CRITICAL(&g_mux);
+}
+
+void j1587ResetMinMax() {
+  portENTER_CRITICAL(&g_mux);
+  for (int i = 0; i < g_numPids; i++) {
+    g_pids[i].vmin = g_pids[i].vmax = NAN;
+  }
   portEXIT_CRITICAL(&g_mux);
 }
 

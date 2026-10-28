@@ -79,12 +79,12 @@ With the real switch, it should read closed at rest. Optional: pull 5 inHg on it
 5. **Transmit check:** scope pin 33/34 while the TIM is the only thing connected. You should see no driven traffic, ever. The DE pin (IO17) measures 0 V.
 
 ## 8. Engine-off calibration (on the truck, engine off, key on)
-1. The Calibrate page header must say "Engine confirmed off".
+1. The Calibrate page header should say "Engine off" (engine speed 0 on J1587). Zeroing isn't blocked any more, so this check is up to you.
 2. Record each sensor's ratio **before** zeroing:
    - C59 should be about 0.49, which confirms the 0-30 psia, 0.5-4.5 V assumption.
    - For the oil and air sensors, about 0.10 means a gauge sensor reading zero. About 0.49 means an absolute sensor; don't zero it, and tell me the reading.
 3. Press **Zero all**. Any item it refuses says why.
-4. Start the engine. The header changes to running and the zero buttons are blocked.
+4. Start the engine. The header changes to running (engine speed on J1587 over 300 rpm).
 
 ## 9. ESP-NOW
 With the BMS powered, the Modules tab lists the BMS MAC with type `status`/`board` and its packets counting up. The BMS doesn't need to change.

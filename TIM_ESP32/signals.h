@@ -38,11 +38,20 @@ struct EngineInfo {
   const char* reason;
 };
 
+// Dashboard min/max of each engineering value since boot or the last clear (RAM only).
+struct SigMinMax {
+  float vmin, vmax;     // NAN = no good reading yet
+  uint32_t tmin, tmax;  // uptime second each was reached
+};
+
 extern const SigDef kSig[kNumSig];
 extern const char* const kSigStatusText[];
 
 void signalsCompute(const AdcSnapshot& a, SigValue out[kNumSig]);
 EngineInfo engineInfo(const SigValue s[kNumSig]);
+void sigMinMaxBegin();                       // starts the 50 Hz tracking task
+void sigMinMaxGet(SigMinMax out[kNumSig]);
+void sigMinMaxReset();
 float sensorRatio(const AdcSnapshot& a, uint8_t ch);   // NAN if no data
 float sensorUncorrected(const AdcSnapshot& a, uint8_t curve);  // curve output before the zero offset
 float voltageUncorrected(const AdcSnapshot& a, uint8_t sig);   // FE-A input volts before the meter trim

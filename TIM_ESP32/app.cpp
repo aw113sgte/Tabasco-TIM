@@ -9,6 +9,7 @@
 #include "j1587.h"
 #include "settings.h"
 #include "signals.h"
+#include "uptime.h"
 #include "web.h"
 
 static bool g_appConfirmed = false;
@@ -40,7 +41,7 @@ static void printStatus() {
   adcGet(a);
   signalsCompute(a, s);
   const EngineInfo e = engineInfo(s);
-  Serial.printf("TIM firmware %s, up %lu s, free heap %u\n", TIM_FW_VERSION, (unsigned long)(millis() / 1000),
+  Serial.printf("TIM firmware %s, up %lu s, free heap %u\n", TIM_FW_VERSION, (unsigned long)uptimeSeconds(),
                 (unsigned)ESP.getFreeHeap());
   Serial.printf("ADCs: U7 %s, U8 %s, U9 %s, U10 %s, %.1f scans/s\n", a.ok[0] ? "ok" : "MISSING",
                 a.ok[1] ? "ok" : "MISSING", a.ok[2] ? "ok" : "MISSING", a.ok[3] ? "ok" : "MISSING", a.scanHz);
@@ -143,6 +144,7 @@ void setup() {
   Serial.printf("\n[TIM] firmware %s starting\n", TIM_FW_VERSION);
   settingsBegin();
   adcBegin();
+  sigMinMaxBegin();
   wifiBegin();
   espnowBegin();
   webBegin();

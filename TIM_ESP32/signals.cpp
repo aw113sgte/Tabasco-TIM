@@ -3,12 +3,13 @@
 #include "config.h"
 #include "j1587.h"
 #include "settings.h"
+#include "uptime.h"
 
 const SigDef kSig[kNumSig] = {
-    {"v1437", "Battery +24 V (pin 1, 1437)", "V", 2, CH_V1437},
-    {"v1139", "Starter motor B+ (pin 11, 1139)", "V", 2, CH_V1139},
+    {"v1437", "Battery +24 V via C66 (pin 1, 1437)", "V", 2, CH_V1437},
+    {"v1139", "Starter motor B+, live only while cranking (pin 11, 1139)", "V", 2, CH_V1139},
     {"v1138", "Starter - / shunt top (pin 7, 1138)", "V", 2, CH_V1138},
-    {"v1431", "Ignition switch feed (pin 12, 1431)", "V", 2, CH_V1431},
+    {"v1431", "Crank command, key in START (pin 12, 1431)", "V", 2, CH_V1431},
     {"v1274", "Alternator B+ (pin 13, 1274)", "V", 2, CH_V1274},
     {"v2010", "Alternator field (pin 14, 2010)", "V", 2, CH_V2010},
     {"v1435a", "Alternator ground sense (pin 8, 1435A)", "V", 2, CH_V1435A},
@@ -122,42 +123,75 @@ void signalsCompute(const AdcSnapshot& a, SigValue s[kNumSig]) {
   }
 }
 
+// ------------------------------------------------------------------ min/max
+
+static SigMinMax g_mm[kNumSig];
+static volatile bool g_mmReset = true;
+static portMUX_TYPE g_mmMux = portMUX_INITIALIZER_UNLOCKED;
+
+// Every 20 ms, faster than the dashboard polls, so short peaks such as cranking current are caught.
+static void minMaxTask(void*) {
+  AdcSnapshot a;
+  SigValue s[kNumSig];
+  for (;;) {
+    adcGet(a);
+    signalsCompute(a, s);
+    const uint32_t t = uptimeSeconds();
+    portENTER_CRITICAL(&g_mmMux);
+    const bool reset = g_mmReset;
+    g_mmReset = false;
+    for (uint8_t i = 0; i < kNumSig; i++) {
+      SigMinMax& m = g_mm[i];
+      if (reset) {
+        m.vmin = m.vmax = NAN;
+      }
+      const float v = s[i].v;
+      if (s[i].st != ST_OK || isnan(v)) {
+        continue;
+      }
+      if (isnan(m.vmin) || v < m.vmin) {
+        m.vmin = v;
+        m.tmin = t;
+      }
+      if (isnan(m.vmax) || v > m.vmax) {
+        m.vmax = v;
+        m.tmax = t;
+      }
+    }
+    portEXIT_CRITICAL(&g_mmMux);
+    vTaskDelay(pdMS_TO_TICKS(20));
+  }
+}
+
+void sigMinMaxBegin() {
+  xTaskCreatePinnedToCore(minMaxTask, "minmax", 4096, nullptr, 2, nullptr, 1);
+}
+
+void sigMinMaxGet(SigMinMax out[kNumSig]) {
+  portENTER_CRITICAL(&g_mmMux);
+  memcpy(out, g_mm, sizeof(g_mm));
+  portEXIT_CRITICAL(&g_mmMux);
+}
+
+void sigMinMaxReset() {
+  g_mmReset = true;
+}
+
+// Engine state comes only from engine speed (MID 128, PID 190) on J1587.
 EngineInfo engineInfo(const SigValue s[kNumSig]) {
-  EngineInfo e = {ENG_OFF, false, NAN, "no engine speed on J1587, alternator B+ under 28 V, no starter current"};
+  (void)s;
+  EngineInfo e = {ENG_UNKNOWN, false, NAN, "no engine speed on J1587 in the last 3 s"};
   float rpm;
   if (j1587Value(128, 190, rpm, 3000)) {
     e.rpmSeen = true;
     e.rpm = rpm;
-  }
-  if (s[S_SHUNT].st == ST_OK && fabsf(s[S_SHUNT].v) > kCrankingA) {
-    e.state = ENG_CRANKING;
-    e.reason = "starter current";
-  } else if (e.rpmSeen) {  // engine speed from the ECM beats any voltage guess
-    if (e.rpm > kRunningRpm) {
-      e.state = ENG_RUNNING;
-      e.reason = "engine speed on J1587";
-    } else {
-      e.reason = "engine speed 0 on J1587, no starter current";
-    }
-  } else if (s[S_V1274].st == ST_OK && s[S_V1274].v > kAltChargingV) {
-    e.state = ENG_RUNNING;
-    e.reason = "alternator charging";
-  } else if (s[S_V1274].st != ST_OK || s[S_SHUNT].st != ST_OK) {
-    e.state = ENG_UNKNOWN;
-    e.reason = "alternator or shunt reading not available";
+    e.state = rpm > kRunningRpm ? ENG_RUNNING : ENG_OFF;
+    e.reason = "engine speed on J1587";
   }
   return e;
 }
 
 // ------------------------------------------------------------------ calibration
-
-static String engineOffCheck(const SigValue s[kNumSig]) {
-  const EngineInfo e = engineInfo(s);
-  if (e.state == ENG_OFF) {
-    return "";
-  }
-  return String("engine not confirmed off: ") + e.reason;
-}
 
 static void current(AdcSnapshot& a, SigValue s[kNumSig]) {
   adcGet(a);
@@ -205,10 +239,6 @@ String calZero(const char* what, uint32_t epoch) {
   AdcSnapshot a;
   SigValue s[kNumSig];
   current(a, s);
-  String err = engineOffCheck(s);
-  if (err.length()) {
-    return err;
-  }
   calBeginChange();
   const String w(what);
   if (w == "all") {
@@ -223,7 +253,7 @@ String calZero(const char* what, uint32_t epoch) {
     saveCal();
     return errors;  // the items that passed are saved even if others refused
   }
-  err = zeroOne(w, a, epoch);
+  const String err = zeroOne(w, a, epoch);
   if (err.length() == 0) {
     saveCal();
   }
