@@ -35,7 +35,8 @@ A DevKitC on its own (not plugged into the TIM board) runs fine: it reports the 
 - Join the Wi-Fi network **TIM-Tabasco** (password **tabasco-tim**). The phone or laptop pops up the TIM page on its own, the same way public Wi-Fi shows a sign-in page. You can also open **http://192.168.4.1** (or http://tim.local on a laptop) at any time. For firmware uploads, use Chrome at http://192.168.4.1 if the pop-up window's file picker doesn't work.
 - Change the hotspot password on the Settings page. Settings, Calibrate and Update ask for a login: user `admin`, password = the hotspot password.
 - Tabs: Dashboard (sensors you pick), All signals (every ADC channel raw and converted, min/max), J1587 (trouble codes the modules broadcast, every parameter heard on the bus, download a capture), Calibrate, Modules (ESP-NOW nodes heard), Settings (dashboard choice, firmware update, Wi-Fi, restart, factory reset).
-- USB serial commands: `STATUS`, `RAW`, `I2C`, `J1587 ON|OFF` (print every frame), `ZERO all|shunt|c59|oil_in|oil_out|air`, `WIFI`, `NOW`, `REBOOT`.
+- USB serial commands: `STATUS`, `RAW`, `I2C`, `J1587 ON|OFF` (print every frame), `ZERO all|shunt|c59|oil_in|oil_out|air`, `WIFI` (status), `WIFI STA OFF` / `WIFI STA ON` / `WIFI RETRY` (shop Wi-Fi), `SCAN` (networks the TIM can hear), `NOW`, `REBOOT`.
+- Shop Wi-Fi: 2.4 GHz only. If the TIM can't join within 20 s, it gives up, puts the hotspot back on channel 1, shows the reason in Settings (network not found, password rejected, ...) and retries every 10 min, but only while nobody is on the hotspot. Settings has a network scan and a "Try shop Wi-Fi now" button.
 - LEDs: D5 status blinks once a second with all four ADCs answering, fast when one is missing. D6 lights while J1587 frames are arriving.
 
 ## Updating over Wi-Fi

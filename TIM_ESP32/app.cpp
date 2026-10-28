@@ -81,8 +81,8 @@ static void handleSerial() {
     char* arg = strchr(line, ' ');
     if (arg) *arg++ = '\0';
     if (!strcasecmp(line, "HELP")) {
-      Serial.println("Commands: STATUS, RAW, I2C, J1587 [ON|OFF], ZERO <all|shunt|c59|oil_in|oil_out|air>, WIFI, "
-                     "NOW, REBOOT");
+      Serial.println("Commands: STATUS, RAW, I2C, J1587 [ON|OFF], ZERO <all|shunt|c59|oil_in|oil_out|air>, "
+                     "WIFI [STA ON|STA OFF|RETRY], SCAN, NOW, REBOOT");
     } else if (!strcasecmp(line, "STATUS") || !strcasecmp(line, "GET")) {
       printStatus();
     } else if (!strcasecmp(line, "RAW")) {
@@ -96,7 +96,25 @@ static void handleSerial() {
       const String err = calZero(arg ? arg : "all", 0);
       Serial.println(err.length() ? "Refused: " + err : String("Zeroed"));
     } else if (!strcasecmp(line, "WIFI")) {
+      if (arg && !strcasecmp(arg, "STA OFF")) {
+        wifiSetSta(false);
+        Serial.println("Shop Wi-Fi off (saved); hotspot only, channel 1");
+      } else if (arg && !strcasecmp(arg, "STA ON")) {
+        wifiSetSta(true);
+      } else if (arg && !strcasecmp(arg, "RETRY")) {
+        wifiRetryNow();
+      }
       Serial.printf("%s\n", wifiStatusText().c_str());
+    } else if (!strcasecmp(line, "SCAN")) {
+      static String names[20];
+      static int8_t rssi[20];
+      static uint8_t chan[20];
+      static bool secure[20];
+      const int n = wifiScan(names, rssi, chan, secure, 20);
+      Serial.printf("%d networks (2.4 GHz only):\n", n);
+      for (int i = 0; i < n; i++) {
+        Serial.printf("  %-32s ch %2u  %4d dBm  %s\n", names[i].c_str(), chan[i], rssi[i], secure[i] ? "secured" : "open");
+      }
     } else if (!strcasecmp(line, "NOW")) {
       const NowStats st = espnowStats();
       Serial.printf("ESP-NOW %s: tx %lu, fail %lu, rx %lu, commands %lu\n", st.ready ? "ready" : "NOT ready",

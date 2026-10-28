@@ -22,32 +22,172 @@ static const char* const kEngineText[] = {"off", "cranking", "running", "unknown
 
 // ------------------------------------------------------------------ Wi-Fi
 
+// The ESP32 has one radio. While it hunts for a shop network it can't join, it hops across every channel
+// and drags the hotspot (and ESP-NOW, which needs channel 1) with it. So a join attempt gets kStaTryMs;
+// after that the TIM drops shop Wi-Fi, puts the hotspot back on channel 1 and only tries again every
+// kStaRetryMs while nobody is on the hotspot.
+enum StaState : uint8_t { STA_OFF, STA_TRYING, STA_CONNECTED, STA_GAVE_UP };
+static const uint32_t kStaTryMs = 20000;
+static const uint32_t kStaRetryMs = 10UL * 60 * 1000;
+static StaState g_sta = STA_OFF;
+static uint32_t g_staSince = 0;
+static volatile uint8_t g_staReason = 0;  // last disconnect reason from the Wi-Fi driver
+
+static const char* staReasonText(uint8_t r) {
+  switch (r) {
+    case WIFI_REASON_NO_AP_FOUND:
+      return "network not found (the ESP32 only sees 2.4 GHz; the name is case-sensitive)";
+    case WIFI_REASON_NO_AP_FOUND_W_COMPATIBLE_SECURITY:
+    case WIFI_REASON_NO_AP_FOUND_IN_AUTHMODE_THRESHOLD:
+      return "network found but its security mode isn't supported (WPA3-only?)";
+    case WIFI_REASON_NO_AP_FOUND_IN_RSSI_THRESHOLD:
+      return "network signal too weak";
+    case WIFI_REASON_AUTH_FAIL:
+    case WIFI_REASON_AUTH_EXPIRE:
+    case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
+    case WIFI_REASON_HANDSHAKE_TIMEOUT:
+      return "password rejected";
+    case WIFI_REASON_ASSOC_FAIL:
+      return "router refused the connection";
+    case 0:
+      return "no answer from the network";
+    default:
+      return nullptr;
+  }
+}
+
+static String staReason() {
+  const char* t = staReasonText(g_staReason);
+  return t ? String(t) : "Wi-Fi reason code " + String(g_staReason);
+}
+
+static void startAp() {
+  WiFi.softAP(g_wifi.apSsid.c_str(), g_wifi.apPass.c_str(), kWifiChannel);
+}
+
+static void staStart() {
+  g_staReason = 0;
+  WiFi.mode(WIFI_AP_STA);
+  WiFi.setAutoReconnect(false);  // wifiLoop() decides when to retry
+  WiFi.begin(g_wifi.staSsid.c_str(), g_wifi.staPass.c_str());
+  g_sta = STA_TRYING;
+  g_staSince = millis();
+  Serial.printf("[TIM] WiFi: trying shop Wi-Fi \"%s\" for %lu s\n", g_wifi.staSsid.c_str(),
+                (unsigned long)(kStaTryMs / 1000));
+}
+
+static void staStop(StaState next) {
+  WiFi.disconnect(false, false);
+  WiFi.mode(WIFI_AP);
+  startAp();  // pins the hotspot (and ESP-NOW) back on channel 1
+  g_sta = next;
+  g_staSince = millis();
+}
+
 void wifiBegin() {
   WiFi.persistent(false);
   WiFi.setHostname(kHostname);
-  WiFi.mode(g_wifi.staEnable ? WIFI_AP_STA : WIFI_AP);
-  WiFi.softAP(g_wifi.apSsid.c_str(), g_wifi.apPass.c_str(), kWifiChannel);
-  if (g_wifi.staEnable && g_wifi.staSsid.length()) {
-    WiFi.setAutoReconnect(true);
-    WiFi.begin(g_wifi.staSsid.c_str(), g_wifi.staPass.c_str());
-  }
+  WiFi.onEvent([](WiFiEvent_t, WiFiEventInfo_t info) { g_staReason = info.wifi_sta_disconnected.reason; },
+               ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+  WiFi.mode(WIFI_AP);
+  startAp();
   // Captive portal: answer every DNS lookup from hotspot clients with the TIM's address, so phones and
   // laptops see a "sign in to network" page and open the TIM page by themselves.
   g_dns.setErrorReplyCode(DNSReplyCode::NoError);
   g_dns.start(53, "*", WiFi.softAPIP());
   MDNS.begin(kHostname);
   MDNS.addService("http", "tcp", 80);
-  Serial.printf("[TIM] WiFi: hotspot \"%s\" at %s, channel %u%s\n", g_wifi.apSsid.c_str(),
-                WiFi.softAPIP().toString().c_str(), (unsigned)kWifiChannel,
-                g_wifi.staEnable ? ", joining shop Wi-Fi" : "");
+  Serial.printf("[TIM] WiFi: hotspot \"%s\" at %s, channel %u\n", g_wifi.apSsid.c_str(),
+                WiFi.softAPIP().toString().c_str(), (unsigned)kWifiChannel);
+  if (g_wifi.staEnable && g_wifi.staSsid.length()) {
+    staStart();
+  }
+}
+
+void wifiLoop() {
+  const uint32_t now = millis();
+  switch (g_sta) {
+    case STA_TRYING:
+      if (WiFi.status() == WL_CONNECTED) {
+        g_sta = STA_CONNECTED;
+        Serial.printf("[TIM] WiFi: joined \"%s\" as %s (channel %u; hotspot and ESP-NOW moved with it)\n",
+                      g_wifi.staSsid.c_str(), WiFi.localIP().toString().c_str(), (unsigned)WiFi.channel());
+      } else if (now - g_staSince > kStaTryMs) {
+        staStop(STA_GAVE_UP);
+        Serial.printf("[TIM] WiFi: couldn't join \"%s\": %s. Hotspot back on channel %u, next try in %lu min\n",
+                      g_wifi.staSsid.c_str(), staReason().c_str(), (unsigned)kWifiChannel,
+                      (unsigned long)(kStaRetryMs / 60000));
+      }
+      break;
+    case STA_CONNECTED:
+      if (WiFi.status() != WL_CONNECTED) {
+        Serial.printf("[TIM] WiFi: lost \"%s\" (%s)\n", g_wifi.staSsid.c_str(), staReason().c_str());
+        staStart();
+      }
+      break;
+    case STA_GAVE_UP:
+      if (now - g_staSince > kStaRetryMs && WiFi.softAPgetStationNum() == 0) {
+        staStart();
+      }
+      break;
+    default:
+      break;
+  }
+}
+
+void wifiRetryNow() {
+  if (g_wifi.staEnable && g_wifi.staSsid.length() && g_sta != STA_CONNECTED) {
+    staStart();
+  }
+}
+
+void wifiSetSta(bool enable) {
+  g_wifi.staEnable = enable;
+  saveWifi();
+  if (enable) {
+    wifiRetryNow();
+  } else if (g_sta != STA_OFF) {
+    staStop(STA_OFF);
+  }
+}
+
+// Networks the TIM can hear (2.4 GHz only). Briefly takes the hotspot off channel 1.
+int wifiScan(String names[], int8_t rssi[], uint8_t chan[], bool secure[], int max) {
+  const int n = WiFi.scanNetworks(false, true);
+  int k = 0;
+  for (int i = 0; i < n && k < max; i++, k++) {
+    names[k] = WiFi.SSID(i);
+    rssi[k] = WiFi.RSSI(i);
+    chan[k] = WiFi.channel(i);
+    secure[k] = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
+  }
+  WiFi.scanDelete();
+  if (g_sta == STA_OFF || g_sta == STA_GAVE_UP) {
+    WiFi.mode(WIFI_AP);
+    startAp();
+  }
+  return k;
 }
 
 String wifiStatusText() {
   String s = "hotspot " + g_wifi.apSsid + " " + WiFi.softAPIP().toString() + ", " + WiFi.softAPgetStationNum() +
              " connected, channel " + WiFi.channel();
-  if (g_wifi.staEnable) {
-    s += WiFi.status() == WL_CONNECTED ? ", shop Wi-Fi " + WiFi.localIP().toString() + " RSSI " + WiFi.RSSI()
-                                       : String(", shop Wi-Fi not connected");
+  const String name = "\"" + g_wifi.staSsid + "\"";
+  const uint32_t secs = (millis() - g_staSince) / 1000;
+  switch (g_sta) {
+    case STA_TRYING:
+      s += ", trying shop Wi-Fi " + name + " (" + secs + " s)";
+      break;
+    case STA_CONNECTED:
+      s += ", shop Wi-Fi " + name + " " + WiFi.localIP().toString() + " RSSI " + WiFi.RSSI();
+      break;
+    case STA_GAVE_UP:
+      s += ", shop Wi-Fi " + name + " failed: " + staReason() + "; next try in " +
+           String((kStaRetryMs / 1000 > secs ? kStaRetryMs / 1000 - secs : 0) / 60) +
+           " min (only while nobody is on the hotspot)";
+      break;
+    default:
+      break;
   }
   return s;
 }
@@ -559,6 +699,33 @@ void webBegin() {
     delay(500);
     ESP.restart();
   });
+  g_server.on("/api/wifi/retry", HTTP_POST, [] {
+    if (!auth()) return;
+    wifiRetryNow();
+    sendResult("");
+  });
+  g_server.on("/api/wifi/scan", HTTP_GET, [] {
+    static String names[20];
+    static int8_t rssi[20];
+    static uint8_t chan[20];
+    static bool secure[20];
+    const int n = wifiScan(names, rssi, chan, secure, 20);
+    String o = "{\"nets\":[";
+    for (int i = 0; i < n; i++) {
+      if (i) o += ',';
+      o += "{\"ssid\":";
+      jStr(o, names[i].c_str());
+      o += ",\"rssi\":";
+      o += rssi[i];
+      o += ",\"ch\":";
+      o += chan[i];
+      o += ",\"secure\":";
+      o += secure[i] ? "true" : "false";
+      o += '}';
+    }
+    o += "]}";
+    sendJson(o);
+  });
   g_server.on("/api/reboot", HTTP_POST, [] {
     if (!auth()) return;
     sendResult("");
@@ -589,6 +756,7 @@ void webBegin() {
 }
 
 void webLoop() {
+  wifiLoop();
   g_dns.processNextRequest();
   g_server.handleClient();
 }

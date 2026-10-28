@@ -4,7 +4,7 @@
 
 #include <Arduino.h>
 
-#define TIM_FW_VERSION "0.1.2"
+#define TIM_FW_VERSION "0.1.3"
 
 // ------------------------------------------------------------------ pins
 static const int8_t kPinJ1708Rx = 16;   // UART2 RX <- SN65HVD1781 RO

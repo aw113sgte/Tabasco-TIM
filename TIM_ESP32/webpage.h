@@ -68,9 +68,10 @@ label{display:block;margin:6px 0}.row{display:flex;flex-wrap:wrap;gap:8px;align-
 <div class="row"><input type="file" id="bin" accept=".bin"><button class="pri" onclick="upload()">Upload</button><span id="upst"></span></div></div>
 <div class="card"><h3>Wi-Fi</h3><p class="mute" id="wst"></p>
 <label>Hotspot name <input id="ap_ssid"></label><label>Hotspot password (8+ characters, blank = keep) <input id="ap_pass" type="password"></label>
-<label><input type="checkbox" id="sta_en"> Also join shop Wi-Fi (moves the radio to the router's channel: the BMS ESP-NOW link only works if that is channel 1)</label>
+<label><input type="checkbox" id="sta_en"> Also join shop Wi-Fi (2.4 GHz only). While joined, the hotspot and ESP-NOW move to the router's channel, so the BMS link only works if that is channel 1. If it can't join within 20 s it gives up, puts the hotspot back on channel 1 and tries again every 10 min while nobody is on the hotspot.</label>
 <label>Shop Wi-Fi name <input id="sta_ssid"></label><label>Shop Wi-Fi password (blank = keep) <input id="sta_pass" type="password"></label>
-<button class="pri" onclick="saveWifi()">Save and restart</button></div>
+<div class="row"><button class="pri" onclick="saveWifi()">Save and restart</button><button onclick="post('/api/wifi/retry')">Try shop Wi-Fi now</button><button onclick="scan()">Scan for networks</button></div>
+<div class="scroll"><table id="scantab"></table></div></div>
 <div class="card"><h3>Device</h3><div class="row"><button onclick="if(confirm('Restart the TIM?'))post('/api/reboot')">Restart</button>
 <button onclick="if(confirm('Erase calibration, Wi-Fi and dashboard settings?'))post('/api/factory',{confirm:'yes'})">Factory reset</button></div>
 <p class="mute">Settings, Calibrate and Update ask for a login: user <b>admin</b>, password = the hotspot password.</p></div>
@@ -146,6 +147,10 @@ function drawSel(){$('sellist').innerHTML=jsel.map((x,k)=>`<li><input type="chec
 function mv(k,d){const t=k+d;if(t<0||t>=jsel.length)return;[jsel[k],jsel[t]]=[jsel[t],jsel[k]];drawSel()}
 async function saveDash(){const ids=jsel.filter(x=>x.on).map(x=>x.id).join(',');const r=await post('/api/dash',{ids});if(r&&r.ok)meta.dash=ids}
 function saveWifi(){if(confirm('Save Wi-Fi settings and restart? Reconnect to the hotspot afterwards.'))post('/api/wifi',{ap_ssid:$('ap_ssid').value,ap_pass:$('ap_pass').value,sta_en:$('sta_en').checked?1:0,sta_ssid:$('sta_ssid').value,sta_pass:$('sta_pass').value})}
+async function scan(){$('scantab').innerHTML='<tr><td>Scanning (the hotspot may drop for a few seconds)...</td></tr>';
+ try{const r=await get('/api/wifi/scan');r.nets.sort((a,b)=>b.rssi-a.rssi);
+  $('scantab').innerHTML='<tr><th>Network</th><th>Channel</th><th>Signal</th><th></th></tr>'+r.nets.map(n=>`<tr><td>${esc(n.ssid||'(hidden)')}</td><td>${n.ch}</td><td>${n.rssi} dBm</td><td><button onclick="$('sta_ssid').value=this.dataset.s" data-s="${esc(n.ssid)}">Use</button></td></tr>`).join('')}
+ catch(e){$('scantab').innerHTML='<tr><td>Scan failed; reconnect to the hotspot and try again.</td></tr>'}}
 function upload(){const f=$('bin').files[0];if(!f){msg('Choose a .bin file first');return}
  const x=new XMLHttpRequest();const fd=new FormData();fd.append('firmware',f,f.name);x.open('POST','/update');
  x.upload.onprogress=e=>{$('upst').textContent=Math.round(100*e.loaded/e.total)+'%'};
