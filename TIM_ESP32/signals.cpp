@@ -27,7 +27,8 @@ const SigDef kSig[kNumSig] = {
     {"c58", "Fuel separator switch C58", "", 0, CH_C58},
 };
 
-const char* const kSigStatusText[] = {"ok", "no ADC", "open / unplugged", "sensor supply fault", "out of range"};
+const char* const kSigStatusText[] = {"ok", "no ADC", "open / unplugged", "sensor supply fault", "out of range",
+                                      "shunt amplifier fault (output at a rail, check U12)"};
 
 static const uint8_t kCurveCh[kNumCurves] = {CH_S_C59, CH_S_C61, CH_S_C62, CH_S_C63};
 static const float kInH2OPerPsi = 27.68f;
@@ -99,8 +100,10 @@ void signalsCompute(const AdcSnapshot& a, SigValue s[kNumSig]) {
   if (isnan(vi)) {
     s[S_SHUNT] = {NAN, ST_NO_ADC};
   } else {
+    // The amplifier output pinned at either rail (beyond +/-1,600 A) is a fault, not a current: a floating
+    // input or a damaged INA240 (for example after C55 was plugged in with power on).
     s[S_SHUNT] = {(vi - g_cal.shuntZeroV) / kShuntVPerA * g_cal.shuntSign,
-                  (vi > kAdcTopV || vi < 0.02f) ? ST_RANGE : ST_OK};
+                  (vi > kAdcTopV || vi < 0.02f) ? ST_AMP_FAULT : ST_OK};
   }
 
   const float v5 = a.v[CH_SENS5V];

@@ -286,7 +286,7 @@ static void apiMeta() {
     o += '}';
   }
   o += "],\"status\":[";
-  for (uint8_t i = 0; i <= ST_RANGE; i++) {
+  for (uint8_t i = 0; i <= ST_AMP_FAULT; i++) {
     if (i) o += ',';
     jStr(o, kSigStatusText[i]);
   }

@@ -80,7 +80,7 @@ label{display:block;margin:6px 0}.row{display:flex;flex-wrap:wrap;gap:8px;align-
 </main><div id="msg"></div>
 <script>
 const $=id=>document.getElementById(id);let meta=null,live=null,cur='dash',timer=null,jsel=[];
-const ST=['ok','no ADC','open / unplugged','sensor supply fault','out of range'];
+const ST=['ok','no ADC','open / unplugged','sensor supply fault','out of range','shunt amplifier fault (output at a rail, check U12)'];
 function msg(t){const m=$('msg');m.textContent=t;m.style.display='block';clearTimeout(m._t);m._t=setTimeout(()=>m.style.display='none',4000)}
 async function get(u){const r=await fetch(u,{cache:'no-store'});return r.json()}
 async function post(u,a={}){a.t=Math.floor(Date.now()/1000);const r=await fetch(u,{method:'POST',body:new URLSearchParams(a)});

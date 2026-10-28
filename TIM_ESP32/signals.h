@@ -14,7 +14,7 @@ enum SigId : uint8_t {
   kNumSig
 };
 
-enum SigStatus : uint8_t { ST_OK, ST_NO_ADC, ST_OPEN, ST_SUPPLY, ST_RANGE };
+enum SigStatus : uint8_t { ST_OK, ST_NO_ADC, ST_OPEN, ST_SUPPLY, ST_RANGE, ST_AMP_FAULT };
 
 struct SigDef {
   const char* id;

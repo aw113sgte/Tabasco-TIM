@@ -111,7 +111,7 @@ void espnowPackets(const SigValue s[kNumSig], const EngineInfo& e, String& volts
   for (uint8_t i = S_V1437; i <= S_SENS5V; i++) {
     volts += ',';
     jKey(volts, kSig[i].id);
-    jNum(volts, s[i].st == ST_NO_ADC ? NAN : s[i].v, i == S_SHUNT ? 0 : 2);
+    jNum(volts, (s[i].st == ST_NO_ADC || s[i].st == ST_AMP_FAULT) ? NAN : s[i].v, i == S_SHUNT ? 0 : 2);
   }
   volts += '}';
 
