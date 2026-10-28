@@ -115,6 +115,7 @@ void wifiBegin() {
   g_dns.start(53, "*", WiFi.softAPIP());
   MDNS.begin(kHostname);
   MDNS.addService("http", "tcp", 80);
+  MDNS.addServiceTxt("http", "tcp", "path", "/");
   Serial.printf("[TIM] WiFi: hotspot \"%s\" at %s, channel %u\n", g_wifi.apSsid.c_str(),
                 WiFi.softAPIP().toString().c_str(), (unsigned)kWifiChannel);
   if (g_wifi.staEnable && g_wifi.staSsid.length()) {
@@ -127,10 +128,7 @@ void wifiLoop() {
   switch (g_sta) {
     case STA_TRYING:
       if (WiFi.status() == WL_CONNECTED) {
-        g_sta = STA_CONNECTED;
-        MDNS.end();  // re-announce tim.local on the shop network
-        MDNS.begin(kHostname);
-        MDNS.addService("http", "tcp", 80);
+        g_sta = STA_CONNECTED;  // mDNS follows the new interface by itself; restarting it broke service lookups
         Serial.printf("[TIM] WiFi: joined \"%s\" as %s (channel %u; hotspot and ESP-NOW moved with it)\n",
                       g_wifi.staSsid.c_str(), WiFi.localIP().toString().c_str(), (unsigned)WiFi.channel());
       } else if (now - g_staSince > kStaTryMs) {
