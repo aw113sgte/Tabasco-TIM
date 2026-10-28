@@ -26,10 +26,12 @@ void calDefaults(CalData& c) {
   c.baroPsia = 14.696f;
   // C59: 0-30 psia absolute (FLIS); the 0.5-4.5 V curve is the usual one, not confirmed.
   c.curve[CURVE_C59] = {0.10f, 0.90f, 0.0f, 30.0f};
-  // C61 / C62 oil filter (3246334) and C63 air cleaner: ranges unknown, these are placeholders.
+  // C61 / C62 oil filter (3246334): range unknown, this is a placeholder.
   c.curve[CURVE_C61] = {0.10f, 0.90f, 0.0f, 100.0f};
   c.curve[CURVE_C62] = {0.10f, 0.90f, 0.0f, 100.0f};
-  c.curve[CURVE_C63] = {0.10f, 0.90f, 0.0f, 1.0f};  // about 0-28 inH2O
+  // C63 air cleaner: Sensata 67CP022-0015AFNA2 (label), 0-15 psia absolute, 0.5-4.5 V ratiometric.
+  // Restriction = engine-off reference (zero[CURVE_C63], psia) - reading.
+  c.curve[CURVE_C63] = {0.10f, 0.90f, 0.0f, 15.0f};
 }
 
 void settingsBegin() {
@@ -40,6 +42,12 @@ void settingsBegin() {
     g_prefs.getBytes("cal", &stored, sizeof(stored));
     if (stored.version == kCalVersion) {
       g_cal = stored;
+      // Before 0.1.10 C63 had a 0-1 psi gauge placeholder; it's a 0-15 psia sensor.
+      const SensorCurve& c = g_cal.curve[CURVE_C63];
+      if (c.rLo == 0.10f && c.rHi == 0.90f && c.pLo == 0.0f && c.pHi == 1.0f) {
+        g_cal.curve[CURVE_C63] = {0.10f, 0.90f, 0.0f, 15.0f};
+        g_cal.zero[CURVE_C63] = 0;
+      }
     }
   }
   g_calPrev = g_cal;

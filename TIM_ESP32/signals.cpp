@@ -22,13 +22,15 @@ const SigDef kSig[kNumSig] = {
     {"oil_in", "Oil filter inlet C62", "psi", 1, CH_S_C62},
     {"oil_out", "Oil filter outlet C61", "psi", 1, CH_S_C61},
     {"oil_dp", "Oil filter pressure drop", "psi", 1, -1},
-    {"air", "Air cleaner restriction C63", "psi", 2, CH_S_C63},
+    {"air", "Air cleaner restriction C63 (engine-off reference - reading)", "inH2O", 1, -1},
+    {"air_psia", "Air cleaner pressure C63 (absolute)", "psia", 2, CH_S_C63},
     {"c58", "Fuel separator switch C58", "", 0, CH_C58},
 };
 
 const char* const kSigStatusText[] = {"ok", "no ADC", "open / unplugged", "sensor supply fault", "out of range"};
 
 static const uint8_t kCurveCh[kNumCurves] = {CH_S_C59, CH_S_C61, CH_S_C62, CH_S_C63};
+static const float kInH2OPerPsi = 27.68f;
 static const float kSensorOpenV = 0.20f;     // a powered 0.5-4.5 V sensor never reads this low
 static const float kSupplyLowV = 4.5f;       // SENS_5V below this = supply fault
 static const float kAdcTopV = 3.25f;         // FE outputs near the 3.3 V rail = clipped
@@ -113,7 +115,10 @@ void signalsCompute(const AdcSnapshot& a, SigValue s[kNumSig]) {
   s[S_OIL_IN] = sensorValue(a, CURVE_C62, true);
   s[S_OIL_OUT] = sensorValue(a, CURVE_C61, true);
   s[S_OIL_DP] = {s[S_OIL_IN].v - s[S_OIL_OUT].v, worst(s[S_OIL_IN].st, s[S_OIL_OUT].st)};
-  s[S_AIR] = sensorValue(a, CURVE_C63, true);
+  s[S_AIR_PSIA] = sensorValue(a, CURVE_C63, false);
+  // Until the engine-off reference is stored, C59's barometric reference stands in (the two sensors can differ).
+  const float airRef = g_cal.zero[CURVE_C63] > 5.0f ? g_cal.zero[CURVE_C63] : g_cal.baroPsia;
+  s[S_AIR] = {(airRef - s[S_AIR_PSIA].v) * kInH2OPerPsi, s[S_AIR_PSIA].st};
 
   const float vc = a.v[CH_C58];
   if (isnan(vc)) {
@@ -217,10 +222,20 @@ static String zeroOne(const String& what, const AdcSnapshot& a, uint32_t epoch) 
     g_cal.calEpoch[kEpochBaro] = epoch;
     return "";
   }
+  if (what == "air") {  // absolute sensor: the engine-off reading is the reference restriction is measured from
+    const float p = sensorUncorrected(a, CURVE_C63);
+    if (isnan(p)) return "air: no ADC reading";
+    if (a.v[CH_S_C63] / kFeBGain < kSensorOpenV) return "air: sensor reads open / unplugged";
+    if (p < 10.0f || p > 16.0f) {
+      return "air: reads " + String(p, 2) + " psia; engine-off should be barometric (10-16 psia). Check the sensor curve";
+    }
+    g_cal.zero[CURVE_C63] = p;
+    g_cal.calEpoch[kEpochCurve0 + CURVE_C63] = epoch;
+    return "";
+  }
   int curve = -1;
   if (what == "oil_in") curve = CURVE_C62;
   if (what == "oil_out") curve = CURVE_C61;
-  if (what == "air") curve = CURVE_C63;
   if (curve < 0) return what + ": unknown item";
   const float p = sensorUncorrected(a, curve);
   const SensorCurve& c = g_cal.curve[curve];

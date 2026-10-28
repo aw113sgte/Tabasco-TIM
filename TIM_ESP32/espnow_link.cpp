@@ -118,7 +118,7 @@ void espnowPackets(const SigValue s[kNumSig], const EngineInfo& e, String& volts
   J1587Stats js;
   j1587GetStats(js);
   press = "{\"type\":\"tim_p\",\"fw\":\"" TIM_FW_VERSION "\"";
-  for (uint8_t i = S_C59_PSIA; i <= S_AIR; i++) {
+  for (uint8_t i = S_C59_PSIA; i <= S_AIR_PSIA; i++) {
     press += ',';
     jKey(press, kSig[i].id);
     jNum(press, s[i].st == ST_OK ? s[i].v : NAN, 2);

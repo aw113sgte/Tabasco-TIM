@@ -9,7 +9,7 @@ enum SigId : uint8_t {
   // voltages: same order as CalData::vgain
   S_V1437, S_V1139, S_V1138, S_V1431, S_V1274, S_V2010, S_V1435A, S_V1435B, S_V2085,
   S_SHUNT, S_SENS5V,
-  S_C59_PSIA, S_FUEL_VAC, S_OIL_IN, S_OIL_OUT, S_OIL_DP, S_AIR,
+  S_C59_PSIA, S_FUEL_VAC, S_OIL_IN, S_OIL_OUT, S_OIL_DP, S_AIR, S_AIR_PSIA,
   S_C58,
   kNumSig
 };

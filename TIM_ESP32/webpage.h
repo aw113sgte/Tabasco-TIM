@@ -54,7 +54,7 @@ label{display:block;margin:6px 0}.row{display:flex;flex-wrap:wrap;gap:8px;align-
 <div class="row"><button class="pri" onclick="zero('all')">Zero all</button><button onclick="zero('shunt')">Shunt</button><button onclick="zero('c59')">C59 baro</button><button onclick="zero('oil_in')">Oil inlet</button><button onclick="zero('oil_out')">Oil outlet</button><button onclick="zero('air')">Air cleaner</button><button onclick="post('/api/cal/undo')">Undo last change</button></div>
 <div class="scroll"><table id="zerotab"></table></div></div>
 <div class="card"><h3>Voltage trim against a meter</h3><p class="mute">Measure the wire with a meter (5 V or more), type the reading, press Set.</p><div class="scroll"><table id="vtab"></table></div></div>
-<div class="card"><h3>Sensor curves</h3><p class="mute">Pressure = low + (ratio - ratio low) / (ratio high - ratio low) x (high - low). The usual 0.5-4.5 V sensor is ratio 0.10-0.90. Only C59 (0-30 psia) is from catalog data; the others are placeholders until the sensor ranges are known.</p><div class="scroll"><table id="ctab"></table></div></div>
+<div class="card"><h3>Sensor curves</h3><p class="mute">Pressure = low + (ratio - ratio low) / (ratio high - ratio low) x (high - low). The usual 0.5-4.5 V sensor is ratio 0.10-0.90. C59 (0-30 psia, FLIS) and C63 (0-15 psia, Sensata 67CP 0015A label) are from part data; the oil curves are placeholders until that sensor's range is known.</p><div class="scroll"><table id="ctab"></table></div></div>
 <div class="card"><h3>Battery current direction</h3><p>The shunt carries all battery current: cranking should read positive (discharge) and charging negative. If cranking reads negative, the sense wires are reversed. <button onclick="sign()">Flip sign</button> <span id="signst"></span></p></div>
 </section>
 
@@ -87,7 +87,7 @@ async function post(u,a={}){a.t=Math.floor(Date.now()/1000);const r=await fetch(
  if(r.status==401){msg('Login needed: user admin, hotspot password');return null}const j=await r.json();msg(j.ok?'Done':('Refused: '+j.err));refresh();return j}
 function fmt(v,d){return v==null?'--':Number(v).toFixed(d)}
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
-function extra(id,v){if(v==null)return '';if(id=='fuel_vac')return ' ('+(v*2.036).toFixed(2)+' inHg)';if(id=='air')return ' ('+(v*27.68).toFixed(1)+' inH2O)';return ''}
+function extra(id,v){if(v==null)return '';if(id=='fuel_vac')return ' ('+(v*2.036).toFixed(2)+' inHg)';if(id=='air')return ' ('+(v/27.68).toFixed(3)+' psi)';return ''}
 function sigList(){const a=meta.sig.map((s,i)=>({id:s.id,name:s.name,unit:s.unit,dec:s.dec,i}));
  for(const j of (live&&live.j)||[])a.push({id:j.id,name:j.name,unit:j.unit,dec:j.dec,j:true});return a}
 function valOf(s){if(!live)return{v:null,st:1};if(s.j){const j=live.j.find(x=>x.id==s.id);return j?{v:j.v,st:j.age>5000?1:0,age:j.age,mn:j.mn,mx:j.mx,tmn:j.tmn,tmx:j.tmx}:{v:null,st:1}}
@@ -125,14 +125,14 @@ async function tick(){try{
   let h='<tr><th>MAC</th><th>Type</th><th>RSSI</th><th>Last</th><th>Packets</th><th>Last payload</th></tr>';
   for(const x of n.nodes)h+=`<tr><td>${x.mac}</td><td>${esc(x.type)}</td><td>${x.rssi}</td><td>${(x.age/1000).toFixed(1)} s</td><td>${x.n}</td><td><code>${esc(x.last)}</code></td></tr>`;$('nowtab').innerHTML=h}
 }catch(e){$('hdr').textContent='connection lost'}}
-const CN=['C59 fuel inlet (psia)','C61 oil outlet (psi)','C62 oil inlet (psi)','C63 air cleaner (psi)'];
+const CN=['C59 fuel inlet (psia)','C61 oil outlet (psi)','C62 oil inlet (psi)','C63 air cleaner (psia)'];
 const VI=['v1437','v1139','v1138','v1431','v1274','v2010','v1435a','v1435b','v2085'];
 function when(t){return t?new Date(t*1000).toLocaleString():'never'}
 async function renderCal(){const c=await get('/api/cal');const e=c.eng;
  $('calst').innerHTML=e.state=='off'?'<span class="ok">Engine off ('+esc(e.reason)+').</span>':'<span class="warn">Engine '+e.state+' ('+esc(e.reason)+'). Zeroing still works, but with the engine running it stores a non-zero reading as zero.</span>';
  const z=[['Starter shunt','zero at '+fmt(c.shunt_zero,4)+' V',c.epoch[9]],['C59 barometric reference',fmt(c.baro,3)+' psia (now '+fmt(c.unc[0],3)+', ratio '+fmt(c.ratio[0],4)+')',c.epoch[10]],
   ['Oil inlet C62','offset '+fmt(c.zero[2],3)+' psi (ratio now '+fmt(c.ratio[2],4)+')',c.epoch[13]],['Oil outlet C61','offset '+fmt(c.zero[1],3)+' psi (ratio now '+fmt(c.ratio[1],4)+')',c.epoch[12]],
-  ['Air cleaner C63','offset '+fmt(c.zero[3],3)+' psi (ratio now '+fmt(c.ratio[3],4)+')',c.epoch[14]]];
+  ['Air cleaner C63','reference '+(c.zero[3]>5?fmt(c.zero[3],3)+' psia':'not set (using C59 baro)')+' (now '+fmt(c.unc[3],3)+' psia, ratio '+fmt(c.ratio[3],4)+')',c.epoch[14]]];
  $('zerotab').innerHTML='<tr><th>Item</th><th>Stored</th><th>Set</th></tr>'+z.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td>${when(r[2])}</td></tr>`).join('');
  if(!document.activeElement||document.activeElement.tagName!='INPUT'){
  let h='<tr><th>Signal</th><th>Board reads</th><th>Trim</th><th>Meter V</th><th></th></tr>';

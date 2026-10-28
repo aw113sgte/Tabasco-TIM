@@ -82,7 +82,8 @@ With the real switch, it should read closed at rest. Optional: pull 5 inHg on it
 1. The Calibrate page header should say "Engine off" (engine speed 0 on J1587). Zeroing isn't blocked any more, so this check is up to you.
 2. Record each sensor's ratio **before** zeroing:
    - C59 should be about 0.49, which confirms the 0-30 psia, 0.5-4.5 V assumption.
-   - For the oil and air sensors, about 0.10 means a gauge sensor reading zero. About 0.49 means an absolute sensor; don't zero it, and tell me the reading.
+   - C63 (air cleaner) is absolute: about 0.83-0.87 engine-off is normal. Zeroing stores that as the reference.
+   - For the oil sensors, about 0.10 means a gauge sensor reading zero. About 0.49 means an absolute sensor; don't zero it, and tell me the reading.
 3. Press **Zero all**. Any item it refuses says why.
 4. Start the engine. The header changes to running (engine speed on J1587 over 300 rpm).
 

@@ -52,13 +52,14 @@ From a PC with the Arduino IDE:
 ## ESP-NOW packets (channel 1, unencrypted, once a second, broadcast)
 ```json
 {"type":"tim_v","v1437":27.41,"v1139":27.38,"v1138":0.01,"v1431":27.40,"v1274":27.39,"v2010":0.52,"v1435a":0.00,"v1435b":0.00,"v2085":0.40,"shunt":0,"sens5v":5.01}
-{"type":"tim_p","fw":"0.1.0","c59_psia":14.62,"fuel_vac":0.08,"oil_in":0.00,"oil_out":0.00,"oil_dp":0.00,"air":0.00,"c58":0,"engine":"off","rpm":null,"j1587_frames":1234}
+{"type":"tim_p","fw":"0.1.0","c59_psia":14.62,"fuel_vac":0.08,"oil_in":0.00,"oil_out":0.00,"oil_dp":0.00,"air":0.0,"air_psia":13.60,"c58":0,"engine":"off","rpm":null,"j1587_frames":1234}
 ```
 Volts in V, current in A, pressures in psi (C59 in psia). `null` = no reading. `c58`: 0 = closed (normal), 1 = open (restricted or broken wire).
 Plain-text commands sent to the TIM's MAC: `STATUS` / `GET` (both packets back to the sender), `PING`, `HELP`.
 
 ## Known limits (phase 1)
-- The oil-filter (C61/C62) and air-cleaner (C63) sensor ranges are unknown. Their curves are placeholders (0-100 psi and 0-1 psi over the usual 0.5-4.5 V). Set the real curve on the Calibrate page once it's known. C59 uses the catalog 0-30 psia with the usual 0.5-4.5 V output, which isn't confirmed yet. The engine-off reading checks it: it should be about 14.7 psia, ratio about 0.49.
+- C63 air cleaner is a Sensata 67CP022-0015AFNA2 (from the label): 0-15 psia absolute, 0.5-4.5 V. Restriction = engine-off reference minus the reading, in inH2O ("air"; ESP-NOW too); "air_psia" is the raw pressure. Zero it with the engine off to store the reference; until then C59's barometric value is used. Idle restriction is a fraction of an inH2O, so it only moves under load.
+- The oil-filter (C61/C62) sensor range is unknown. Its curve is a placeholder (0-100 psi over the usual 0.5-4.5 V). Set the real curve on the Calibrate page once it's known. C59 uses the catalog 0-30 psia with the usual 0.5-4.5 V output, which isn't confirmed yet. The engine-off reading checks it: it should be about 14.7 psia, ratio about 0.49.
 - J1587 scalings come from the SAE J1587 table. Check them against a known gauge. Parameters without a known scaling can still go on the dashboard as a raw number.
 - Trouble codes: only the ones the modules broadcast (PID 194). Reading stored codes and clearing codes both need transmitting, which is a later step.
 - No MIC / TIM emulation yet: that needs a bus capture first. The J1587 tab's download gives exactly that capture.
