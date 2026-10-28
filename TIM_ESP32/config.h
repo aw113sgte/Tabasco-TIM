@@ -4,7 +4,7 @@
 
 #include <Arduino.h>
 
-#define TIM_FW_VERSION "0.1.4"
+#define TIM_FW_VERSION "0.1.5"
 
 // ------------------------------------------------------------------ pins
 static const int8_t kPinJ1708Rx = 16;   // UART2 RX <- SN65HVD1781 RO
@@ -33,7 +33,9 @@ static const float kShuntIdleV = 1.65f;
 static const float kC58OpenV = 1.35f;
 
 // ------------------------------------------------------------------ engine state
-static const float kAltChargingV = 26.0f;  // alternator B+ above this = charging = engine running
+// Alternator B+ above this = charging = engine running, used only when engine speed isn't heard on J1587.
+// A shop charger holds the bank near 27.5 V, so the usual 26 V threshold read "running" with the engine off.
+static const float kAltChargingV = 28.0f;
 static const float kCrankingA = 50.0f;     // |starter current| above this = cranking
 static const uint16_t kRunningRpm = 300;
 

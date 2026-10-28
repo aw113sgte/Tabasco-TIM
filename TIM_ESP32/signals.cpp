@@ -123,7 +123,7 @@ void signalsCompute(const AdcSnapshot& a, SigValue s[kNumSig]) {
 }
 
 EngineInfo engineInfo(const SigValue s[kNumSig]) {
-  EngineInfo e = {ENG_OFF, false, NAN, "no RPM, not charging, no starter current"};
+  EngineInfo e = {ENG_OFF, false, NAN, "no engine speed on J1587, alternator B+ under 28 V, no starter current"};
   float rpm;
   if (j1587Value(128, 190, rpm, 3000)) {
     e.rpmSeen = true;
@@ -132,17 +132,19 @@ EngineInfo engineInfo(const SigValue s[kNumSig]) {
   if (s[S_SHUNT].st == ST_OK && fabsf(s[S_SHUNT].v) > kCrankingA) {
     e.state = ENG_CRANKING;
     e.reason = "starter current";
-  } else if (e.rpmSeen && e.rpm > kRunningRpm) {
-    e.state = ENG_RUNNING;
-    e.reason = "engine speed on J1587";
+  } else if (e.rpmSeen) {  // engine speed from the ECM beats any voltage guess
+    if (e.rpm > kRunningRpm) {
+      e.state = ENG_RUNNING;
+      e.reason = "engine speed on J1587";
+    } else {
+      e.reason = "engine speed 0 on J1587, no starter current";
+    }
   } else if (s[S_V1274].st == ST_OK && s[S_V1274].v > kAltChargingV) {
     e.state = ENG_RUNNING;
     e.reason = "alternator charging";
   } else if (s[S_V1274].st != ST_OK || s[S_SHUNT].st != ST_OK) {
     e.state = ENG_UNKNOWN;
     e.reason = "alternator or shunt reading not available";
-  } else if (e.rpmSeen) {
-    e.reason = "engine speed 0 on J1587, not charging, no starter current";
   }
   return e;
 }
