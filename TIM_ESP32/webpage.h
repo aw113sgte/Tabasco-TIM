@@ -69,7 +69,8 @@ label{display:block;margin:6px 0}.row{display:flex;flex-wrap:wrap;gap:8px;align-
 <div class="card"><h3>Wi-Fi</h3><p class="mute" id="wst"></p>
 <label>Hotspot name <input id="ap_ssid"></label><label>Hotspot password (8+ characters, blank = keep) <input id="ap_pass" type="password"></label>
 <label><input type="checkbox" id="sta_en"> Also join shop Wi-Fi (2.4 GHz only). While joined, the hotspot and ESP-NOW move to the router's channel, so the BMS link only works if that is channel 1. If it can't join within 20 s it gives up, puts the hotspot back on channel 1 and tries again every 10 min while nobody is on the hotspot.</label>
-<label>Shop Wi-Fi name <input id="sta_ssid"></label><label>Shop Wi-Fi password (blank = keep) <input id="sta_pass" type="password"></label>
+<label>Shop Wi-Fi name, exactly as it appears (capitals matter; Scan and "Use" fills it in) <input id="sta_ssid"></label>
+<label><input type="checkbox" id="sta_ch1"> Channel 1 only: join only an access point on channel 1, so the hotspot and the BMS link stay on channel 1</label><label>Shop Wi-Fi password (blank = keep) <input id="sta_pass" type="password"></label>
 <div class="row"><button class="pri" onclick="saveWifi()">Save and restart</button><button onclick="post('/api/wifi/retry')">Try shop Wi-Fi now</button><button onclick="scan()">Scan for networks</button></div>
 <div class="scroll"><table id="scantab"></table></div></div>
 <div class="card"><h3>Device</h3><div class="row"><button onclick="if(confirm('Restart the TIM?'))post('/api/reboot')">Restart</button>
@@ -146,7 +147,7 @@ function renderSel(){const ids=meta.dash.split(',').filter(x=>x);const all=sigLi
 function drawSel(){$('sellist').innerHTML=jsel.map((x,k)=>`<li><input type="checkbox" ${x.on?'checked':''} onchange="jsel[${k}].on=this.checked"><span>${esc(x.s?x.s.name:x.id+' (not heard yet)')}</span><button onclick="mv(${k},-1)">&uarr;</button><button onclick="mv(${k},1)">&darr;</button></li>`).join('')}
 function mv(k,d){const t=k+d;if(t<0||t>=jsel.length)return;[jsel[k],jsel[t]]=[jsel[t],jsel[k]];drawSel()}
 async function saveDash(){const ids=jsel.filter(x=>x.on).map(x=>x.id).join(',');const r=await post('/api/dash',{ids});if(r&&r.ok)meta.dash=ids}
-function saveWifi(){if(confirm('Save Wi-Fi settings and restart? Reconnect to the hotspot afterwards.'))post('/api/wifi',{ap_ssid:$('ap_ssid').value,ap_pass:$('ap_pass').value,sta_en:$('sta_en').checked?1:0,sta_ssid:$('sta_ssid').value,sta_pass:$('sta_pass').value})}
+function saveWifi(){if(confirm('Save Wi-Fi settings and restart? Reconnect to the hotspot afterwards.'))post('/api/wifi',{ap_ssid:$('ap_ssid').value,ap_pass:$('ap_pass').value,sta_en:$('sta_en').checked?1:0,sta_ssid:$('sta_ssid').value,sta_ch1:$('sta_ch1').checked?1:0,sta_pass:$('sta_pass').value})}
 async function scan(){$('scantab').innerHTML='<tr><td>Scanning (the hotspot may drop for a few seconds)...</td></tr>';
  try{const r=await get('/api/wifi/scan');r.nets.sort((a,b)=>b.rssi-a.rssi);
   $('scantab').innerHTML='<tr><th>Network</th><th>Channel</th><th>Signal</th><th></th></tr>'+r.nets.map(n=>`<tr><td>${esc(n.ssid||'(hidden)')}</td><td>${n.ch}</td><td>${n.rssi} dBm</td><td><button onclick="$('sta_ssid').value=this.dataset.s" data-s="${esc(n.ssid)}">Use</button></td></tr>`).join('')}
@@ -157,7 +158,7 @@ function upload(){const f=$('bin').files[0];if(!f){msg('Choose a .bin file first
  x.onload=()=>{if(x.status==401){$('upst').textContent='login needed, press Upload again';return}let j={};try{j=JSON.parse(x.responseText)}catch(e){}
   $('upst').textContent=j.ok?'Done. Restarting, reload in 20 s.':'Failed: '+(j.err||x.status)};
  x.onerror=()=>{$('upst').textContent='upload failed'};x.send(fd)}
-async function refresh(){meta=await get('/api/meta');$('fw').textContent=meta.fw;$('ap_ssid').value=meta.wifi.ap_ssid;$('sta_en').checked=meta.wifi.sta_en;$('sta_ssid').value=meta.wifi.sta_ssid;$('wst').textContent=meta.wifi.status;
+async function refresh(){meta=await get('/api/meta');$('fw').textContent=meta.fw;$('ap_ssid').value=meta.wifi.ap_ssid;$('sta_en').checked=meta.wifi.sta_en;$('sta_ssid').value=meta.wifi.sta_ssid;$('sta_ch1').checked=meta.wifi.sta_ch1;$('wst').textContent=meta.wifi.status;
  $('dashnote').textContent='Engineering units: psi, V, A. Change what shows under Settings.';await tick();if(cur=='set')renderSel()}
 document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>{cur=b.dataset.s;document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on',x==b));
  document.querySelectorAll('section').forEach(s=>s.classList.toggle('on',s.id==cur));if(cur=='set')renderSel();tick()});

@@ -32,11 +32,12 @@ static const uint32_t kStaRetryMs = 10UL * 60 * 1000;
 static StaState g_sta = STA_OFF;
 static uint32_t g_staSince = 0;
 static volatile uint8_t g_staReason = 0;  // last disconnect reason from the Wi-Fi driver
+static volatile bool g_staStopping = false;  // our own disconnect() also raises a "disconnected" event
 
 static const char* staReasonText(uint8_t r) {
   switch (r) {
     case WIFI_REASON_NO_AP_FOUND:
-      return "network not found (the ESP32 only sees 2.4 GHz; the name is case-sensitive)";
+      return "network not found (2.4 GHz only; the name is case-sensitive; with \"channel 1 only\" it must be on channel 1)";
     case WIFI_REASON_NO_AP_FOUND_W_COMPATIBLE_SECURITY:
     case WIFI_REASON_NO_AP_FOUND_IN_AUTHMODE_THRESHOLD:
       return "network found but its security mode isn't supported (WPA3-only?)";
@@ -69,26 +70,35 @@ static void staStart() {
   g_staReason = 0;
   WiFi.mode(WIFI_AP_STA);
   WiFi.setAutoReconnect(false);  // wifiLoop() decides when to retry
-  WiFi.begin(g_wifi.staSsid.c_str(), g_wifi.staPass.c_str());
+  // With "channel 1 only", join only an access point on channel 1, so the hotspot and the BMS ESP-NOW link
+  // stay on channel 1 (a mesh or extender often has the same network name on several channels).
+  WiFi.begin(g_wifi.staSsid.c_str(), g_wifi.staPass.c_str(), g_wifi.staCh1Only ? kWifiChannel : 0);
   g_sta = STA_TRYING;
   g_staSince = millis();
-  Serial.printf("[TIM] WiFi: trying shop Wi-Fi \"%s\" for %lu s\n", g_wifi.staSsid.c_str(),
-                (unsigned long)(kStaTryMs / 1000));
+  Serial.printf("[TIM] WiFi: trying shop Wi-Fi \"%s\"%s for %lu s\n", g_wifi.staSsid.c_str(),
+                g_wifi.staCh1Only ? " on channel 1" : "", (unsigned long)(kStaTryMs / 1000));
 }
 
 static void staStop(StaState next) {
+  g_staStopping = true;
+  g_sta = next;
   WiFi.disconnect(false, false);
   WiFi.mode(WIFI_AP);
   startAp();  // pins the hotspot (and ESP-NOW) back on channel 1
-  g_sta = next;
   g_staSince = millis();
+  g_staStopping = false;
 }
 
 void wifiBegin() {
   WiFi.persistent(false);
   WiFi.setHostname(kHostname);
-  WiFi.onEvent([](WiFiEvent_t, WiFiEventInfo_t info) { g_staReason = info.wifi_sta_disconnected.reason; },
-               ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+  WiFi.onEvent(
+      [](WiFiEvent_t, WiFiEventInfo_t info) {
+        if (!g_staStopping && g_sta != STA_OFF && g_sta != STA_GAVE_UP) {
+          g_staReason = info.wifi_sta_disconnected.reason;
+        }
+      },
+      ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
   WiFi.mode(WIFI_AP);
   startAp();
   // Captive portal: answer every DNS lookup from hotspot clients with the TIM's address, so phones and
@@ -113,9 +123,10 @@ void wifiLoop() {
         Serial.printf("[TIM] WiFi: joined \"%s\" as %s (channel %u; hotspot and ESP-NOW moved with it)\n",
                       g_wifi.staSsid.c_str(), WiFi.localIP().toString().c_str(), (unsigned)WiFi.channel());
       } else if (now - g_staSince > kStaTryMs) {
+        const String why = staReason();
         staStop(STA_GAVE_UP);
         Serial.printf("[TIM] WiFi: couldn't join \"%s\": %s. Hotspot back on channel %u, next try in %lu min\n",
-                      g_wifi.staSsid.c_str(), staReason().c_str(), (unsigned)kWifiChannel,
+                      g_wifi.staSsid.c_str(), why.c_str(), (unsigned)kWifiChannel,
                       (unsigned long)(kStaRetryMs / 60000));
       }
       break;
@@ -268,6 +279,8 @@ static void apiMeta() {
   o += g_wifi.staEnable ? "true" : "false";
   o += ",\"sta_ssid\":";
   jStr(o, g_wifi.staSsid.c_str());
+  o += ",\"sta_ch1\":";
+  o += g_wifi.staCh1Only ? "true" : "false";
   o += ",\"status\":";
   jStr(o, wifiStatusText().c_str());
   o += "}}";
@@ -693,6 +706,8 @@ void webBegin() {
     if (pass.length()) g_wifi.apPass = pass;  // blank = keep the current password
     g_wifi.staEnable = g_server.arg("sta_en") == "1";
     g_wifi.staSsid = g_server.arg("sta_ssid");
+    g_wifi.staSsid.trim();
+    g_wifi.staCh1Only = g_server.arg("sta_ch1") == "1";
     if (g_server.hasArg("sta_pass") && g_server.arg("sta_pass").length()) g_wifi.staPass = g_server.arg("sta_pass");
     saveWifi();
     sendResult("");

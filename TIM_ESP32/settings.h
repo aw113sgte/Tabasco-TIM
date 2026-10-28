@@ -33,6 +33,7 @@ struct WifiCfg {
   bool staEnable;
   String staSsid;
   String staPass;
+  bool staCh1Only;  // join only an access point on channel 1 (keeps the hotspot and ESP-NOW on channel 1)
 };
 
 extern CalData g_cal;

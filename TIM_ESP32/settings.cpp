@@ -48,6 +48,7 @@ void settingsBegin() {
   g_wifi.staEnable = g_prefs.getBool("sta_en", false);
   g_wifi.staSsid = g_prefs.getString("sta_ssid", "");
   g_wifi.staPass = g_prefs.getString("sta_pass", "");
+  g_wifi.staCh1Only = g_prefs.getBool("sta_ch1", true);
   g_dash = g_prefs.getString("dash", kDefaultDash);
 }
 
@@ -77,6 +78,7 @@ void saveWifi() {
   g_prefs.putBool("sta_en", g_wifi.staEnable);
   g_prefs.putString("sta_ssid", g_wifi.staSsid);
   g_prefs.putString("sta_pass", g_wifi.staPass);
+  g_prefs.putBool("sta_ch1", g_wifi.staCh1Only);
 }
 
 void saveDash() {
@@ -88,6 +90,6 @@ void factoryReset() {
   calDefaults(g_cal);
   g_calPrev = g_cal;
   g_havePrev = false;
-  g_wifi = {kDefaultApSsid, kDefaultApPass, false, "", ""};
+  g_wifi = {kDefaultApSsid, kDefaultApPass, false, "", "", true};
   g_dash = kDefaultDash;
 }
