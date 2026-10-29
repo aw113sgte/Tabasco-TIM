@@ -1,6 +1,8 @@
 # TIM ESP32 firmware
 
-Firmware for the rev A TIM replacement board (design: `Design_Notes.md` in the TIM `PCB` folder) with an **ESP32-DevKitC-32E** or **-32UE** plugged in.
+Firmware for the TIM replacement board (design: `Design_Notes.md` in the TIM `PCB` folder):
+- **Rev A** with an **ESP32-DevKitC-32E** or **-32UE** plugged in.
+- **Rev B** (`PCB/Rev_B`) with the ESP32-WROOM-32E module on the board. Same GPIOs, so the same firmware and the same `.bin` files run on both.
 Phase 1 is board verification: it reads everything, calibrates, shows it all in a web page, and listens to J1587. It **never transmits on J1708**: IO17 (transceiver DE) is held low the whole time.
 
 Plan and decisions: `Firmware_Plan.md`. Bench checks: `Bench_Test.md`.
@@ -28,6 +30,8 @@ Plan and decisions: `Firmware_Plan.md`. Bench checks: `Bench_Test.md`.
 1. Arduino IDE with **esp32 by Espressif Systems 3.3.x** (the same core as the BMS; it was built and checked here with 3.3.12). No extra libraries are needed.
 2. Tools: Board **ESP32 Dev Module**, Partition Scheme **Default 4MB with spiffs (1.2MB APP/1.5MB SPIFFS)**. Leave the rest at the defaults.
 3. Plug the DevKitC into the PC by USB (on the board or on its own) and press Upload.
+   On rev B, use the board's USB-C port. It is isolated and powers the ESP32 on its own, so the truck harness can stay unplugged. Auto-reset works as on the DevKitC; if an upload doesn't start, hold **BOOT**, tap **EN**, then release BOOT.
+   A new rev B board needs its shunt zero calibrated once (Calibrate tab), the same as a new rev A board.
 4. Open the Serial Monitor at 115200 and type `HELP`.
 
 A DevKitC on its own (not plugged into the TIM board) runs fine: it reports the ADCs as missing and blinks the status LED fast.
