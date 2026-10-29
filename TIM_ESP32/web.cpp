@@ -9,6 +9,7 @@
 #include "adc.h"
 #include "config.h"
 #include "espnow_link.h"
+#include "health.h"
 #include "j1587.h"
 #include "json_util.h"
 #include "settings.h"
@@ -24,15 +25,18 @@ static const char* const kEngineText[] = {"off", "cranking", "running", "unknown
 // ------------------------------------------------------------------ Wi-Fi
 
 // The ESP32 has one radio. While it hunts for a shop network it can't join, it hops across every channel
-// and drags the hotspot (and ESP-NOW, which needs channel 1) with it. So a join attempt gets kStaTryMs;
-// after that the TIM drops shop Wi-Fi, puts the hotspot back on channel 1 and only tries again every
-// kStaRetryIdleMs while nobody is on the hotspot, or every kStaRetryBusyMs while someone is (a failed attempt
-// can move the hotspot off channel 1 for up to 20 s). A phone that auto-joins the hotspot then can't keep the
-// TIM off shop Wi-Fi for good, and a short drop (mesh roaming, router restart) heals within a minute.
+// and drags the hotspot (and ESP-NOW, which needs channel 1) with it. So a join attempt gets kStaTryMs, then
+// the TIM disconnects the station side and waits before the next try: 30 s after the first failure, doubling
+// up to 10 min while the network stays away, and at least 5 min while someone is on the hotspot.
+// The radio mode is set once at boot (hotspot + station when shop Wi-Fi is on) and the hotspot is never
+// restarted. v0.1.7-0.1.11 switched modes and restarted the hotspot on every attempt, about once a minute with
+// the shop network out of reach, which dropped phones while they were joining.
 enum StaState : uint8_t { STA_OFF, STA_TRYING, STA_CONNECTED, STA_GAVE_UP };
 static const uint32_t kStaTryMs = 20000;
-static const uint32_t kStaRetryIdleMs = 30000;
+static const uint32_t kStaRetryMinMs = 30000;
+static const uint32_t kStaRetryMaxMs = 10UL * 60 * 1000;
 static const uint32_t kStaRetryBusyMs = 5UL * 60 * 1000;
+static uint32_t g_staRetryMs = kStaRetryMinMs;  // grows after each failed attempt, back to the minimum on success
 static uint32_t g_staDrops = 0;     // times a joined shop Wi-Fi was lost since boot
 static uint32_t g_staDropMs = 0;
 static uint8_t g_staDropReason = 0;
@@ -73,9 +77,15 @@ static void startAp() {
   WiFi.softAP(g_wifi.apSsid.c_str(), g_wifi.apPass.c_str(), kWifiChannel);
 }
 
+static uint32_t staRetryWait() {
+  return WiFi.softAPgetStationNum() ? max(g_staRetryMs, kStaRetryBusyMs) : g_staRetryMs;
+}
+
 static void staStart() {
   g_staReason = 0;
-  WiFi.mode(WIFI_AP_STA);
+  if (WiFi.getMode() != WIFI_AP_STA) {
+    WiFi.mode(WIFI_AP_STA);  // only the first time; the hotspot keeps running
+  }
   WiFi.setAutoReconnect(false);  // wifiLoop() decides when to retry
   // With "channel 1 only", join only an access point on channel 1, so the hotspot and the BMS ESP-NOW link
   // stay on channel 1 (a mesh or extender often has the same network name on several channels).
@@ -86,12 +96,14 @@ static void staStart() {
                 g_wifi.staCh1Only ? " on channel 1" : "", (unsigned long)(kStaTryMs / 1000));
 }
 
+// Stops the station side only. The hotspot stays up and the radio returns to its channel 1.
 static void staStop(StaState next) {
   g_staStopping = true;
   g_sta = next;
   WiFi.disconnect(false, false);
-  WiFi.mode(WIFI_AP);
-  startAp();  // pins the hotspot (and ESP-NOW) back on channel 1
+  if (next == STA_OFF) {
+    WiFi.mode(WIFI_AP);
+  }
   g_staSince = millis();
   g_staStopping = false;
 }
@@ -107,7 +119,7 @@ void wifiBegin() {
         }
       },
       ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
-  WiFi.mode(WIFI_AP);
+  WiFi.mode(g_wifi.staEnable && g_wifi.staSsid.length() ? WIFI_AP_STA : WIFI_AP);
   startAp();
   // Captive portal: answer every DNS lookup from hotspot clients with the TIM's address, so phones and
   // laptops see a "sign in to network" page and open the TIM page by themselves.
@@ -129,6 +141,7 @@ void wifiLoop() {
     case STA_TRYING:
       if (WiFi.status() == WL_CONNECTED) {
         g_sta = STA_CONNECTED;  // mDNS follows the new interface by itself; restarting it broke service lookups
+        g_staRetryMs = kStaRetryMinMs;
         Serial.printf("[TIM] WiFi: joined \"%s\" as %s (channel %u; hotspot and ESP-NOW moved with it)\n",
                       g_wifi.staSsid.c_str(), WiFi.localIP().toString().c_str(), (unsigned)WiFi.channel());
       } else if (now - g_staSince > kStaTryMs) {
@@ -136,7 +149,8 @@ void wifiLoop() {
         staStop(STA_GAVE_UP);
         Serial.printf("[TIM] WiFi: couldn't join \"%s\": %s. Hotspot back on channel %u, next try in %lu s\n",
                       g_wifi.staSsid.c_str(), why.c_str(), (unsigned)kWifiChannel,
-                      (unsigned long)((WiFi.softAPgetStationNum() ? kStaRetryBusyMs : kStaRetryIdleMs) / 1000));
+                      (unsigned long)(staRetryWait() / 1000));
+        g_staRetryMs = min(g_staRetryMs * 2, kStaRetryMaxMs);
       }
       break;
     case STA_CONNECTED:
@@ -149,7 +163,7 @@ void wifiLoop() {
       }
       break;
     case STA_GAVE_UP:
-      if (now - g_staSince > (WiFi.softAPgetStationNum() ? kStaRetryBusyMs : kStaRetryIdleMs)) {
+      if (now - g_staSince > staRetryWait()) {
         staStart();
       }
       break;
@@ -185,9 +199,8 @@ int wifiScan(String names[], int8_t rssi[], uint8_t chan[], bool secure[], int m
     secure[k] = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
   }
   WiFi.scanDelete();
-  if (g_sta == STA_OFF || g_sta == STA_GAVE_UP) {
-    WiFi.mode(WIFI_AP);
-    startAp();
+  if (g_sta == STA_OFF) {
+    WiFi.mode(WIFI_AP);  // the scan switched the station side on
   }
   return k;
 }
@@ -206,9 +219,9 @@ String wifiStatusText() {
       break;
     case STA_GAVE_UP:
       {
-        const uint32_t wait = (WiFi.softAPgetStationNum() ? kStaRetryBusyMs : kStaRetryIdleMs) / 1000;
+        const uint32_t wait = staRetryWait() / 1000;
         s += ", shop Wi-Fi " + name + " failed: " + staReason() + "; next try in " + String(wait > secs ? wait - secs : 0) +
-             " s (every 30 s, or 5 min while someone is on the hotspot)";
+             " s (30 s doubling to 10 min; at least 5 min while someone is on the hotspot)";
       }
       break;
     default:
@@ -401,6 +414,12 @@ static void apiRaw() {
   jNum(o, a.scanHz, 1);
   o += ",\"heap\":";
   o += ESP.getFreeHeap();
+  o += ",\"heapmin\":";
+  o += ESP.getMinFreeHeap();
+  o += ",\"heapblk\":";
+  o += ESP.getMaxAllocHeap();
+  o += ",\"reset\":";
+  jStr(o, resetReasonText());
   o += ",\"up\":";
   o += uptimeSeconds();
   o += ",\"wifi\":";

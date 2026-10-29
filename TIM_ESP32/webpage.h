@@ -108,7 +108,7 @@ async function tick(){try{
  $('eng').className=e.state=='off'?'ok':'warn';$('hdr').textContent='up '+live.up+' s';$('upnow').textContent=live.up;
  if(cur=='dash')renderDash();
  if(cur=='sig'){renderEng();const r=await get('/api/raw');
-  $('adcsum').textContent='ADCs: '+['U7 0x48','U8 0x49','U9 0x4A','U10 0x4B'].map((n,i)=>n+(r.ok[i]?' ok':' MISSING')+(r.err[i]?' ('+r.err[i]+' errors)':'')).join(', ')+'. '+r.hz+' scans/s, free heap '+r.heap+'. Wi-Fi: '+r.wifi;
+  $('adcsum').textContent='ADCs: '+['U7 0x48','U8 0x49','U9 0x4A','U10 0x4B'].map((n,i)=>n+(r.ok[i]?' ok':' MISSING')+(r.err[i]?' ('+r.err[i]+' errors)':'')).join(', ')+'. '+r.hz+' scans/s, free heap '+r.heap+' (lowest '+r.heapmin+', largest block '+r.heapblk+'), up '+r.up+' s, last restart: '+r.reset+'. Wi-Fi: '+r.wifi;
   let h='<tr><th>Channel</th><th>C55 pin / wire</th><th>ADC V</th><th>min</th><th>max</th><th>Input</th><th>Ratio</th></tr>';
   for(const c of r.ch)h+=`<tr><td>${c.n}</td><td>${c.pin}</td><td>${fmt(c.v,4)}</td><td>${fmt(c.min,4)}</td><td>${fmt(c.max,4)}</td><td>${fmt(c.in,c.n=='SHUNT_I'?0:3)}${c.n=='SHUNT_I'?' A':' V'}</td><td>${c.r==null?'':fmt(c.r,4)}</td></tr>`;$('rawtab').innerHTML=h}
  if(cur=='j'){const j=await get('/api/j1587');const s=j.st;

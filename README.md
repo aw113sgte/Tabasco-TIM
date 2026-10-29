@@ -21,6 +21,7 @@ Plan and decisions: `Firmware_Plan.md`. Bench checks: `Bench_Test.md`.
 | `j1587.cpp` | UART2 receive at 9600, J1708 framing and checksum, J1587 PID decoding, capture buffer |
 | `web.cpp`, `webpage.h` | Hotspot, web UI, JSON API, firmware upload |
 | `espnow_link.cpp` | ESP-NOW on channel 1 (same conventions as the BMS v2) |
+| `health.cpp` | Last restart reason; restarts when free memory runs low and nobody is on the hotspot |
 | `settings.cpp` | Calibration, Wi-Fi and dashboard settings in flash (they survive updates) |
 
 ## Build and first flash (Arduino IDE, once, over USB)
@@ -38,7 +39,7 @@ A DevKitC on its own (not plugged into the TIM board) runs fine: it reports the 
 - Engine state comes only from engine speed on J1587: over 300 rpm = running, below = off, nothing heard = unknown. Updates and zeroing work at any time; zero with the engine off for a true zero.
 - Tabs: Dashboard (sensors you pick), All signals (every ADC channel raw and converted, min/max), J1587 (trouble codes the modules broadcast, every parameter heard on the bus, download a capture), Calibrate, Modules (ESP-NOW nodes heard), Settings (dashboard choice, firmware update, Wi-Fi, restart, factory reset).
 - USB serial commands: `STATUS`, `RAW`, `I2C`, `J1587 ON|OFF` (print every frame), `ZERO all|shunt|c59|oil_in|oil_out|air`, `WIFI` (status), `WIFI STA OFF` / `WIFI STA ON` / `WIFI RETRY` (shop Wi-Fi), `SCAN` (networks the TIM can hear), `NOW`, `REBOOT`.
-- Shop Wi-Fi: 2.4 GHz only. If the TIM can't join within 20 s, it gives up, puts the hotspot back on channel 1, shows the reason in Settings (network not found, password rejected, ...) and retries every 30 s (every 5 min while someone is on the hotspot, because a failed try can move the hotspot off channel 1 briefly). Settings shows how often shop Wi-Fi was lost since restart and why. "Channel 1 only" (on by default) joins only an access point on channel 1, so the hotspot and the BMS link stay on channel 1. Settings has a network scan and a "Try shop Wi-Fi now" button.
+- Shop Wi-Fi: 2.4 GHz only. If the TIM can't join within 20 s, it gives up, puts the hotspot back on channel 1, shows the reason in Settings (network not found, password rejected, ...) and retries after 30 s, doubling up to 10 min while the network stays away (at least 5 min while someone is on the hotspot, because a try can move the hotspot off channel 1 briefly). The hotspot itself is never restarted. Settings shows how often shop Wi-Fi was lost since restart and why. "Channel 1 only" (on by default) joins only an access point on channel 1, so the hotspot and the BMS link stay on channel 1. Settings has a network scan and a "Try shop Wi-Fi now" button.
 - LEDs: D5 status blinks once a second with all four ADCs answering, fast when one is missing. D6 lights while J1587 frames are arriving.
 
 ## Updating over Wi-Fi
